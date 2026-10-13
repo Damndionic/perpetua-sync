@@ -20,7 +20,17 @@ static class Program
         // the installed one is already running, it just brings that one forward.
         if (!Installer.RunningInstalled && !args.Contains("--portable"))
         {
-            if (Mutex.TryOpenExisting(name, out var running)) { running.Dispose(); showMe.Set(); return 0; }
+            if (Mutex.TryOpenExisting(name, out var running))
+            {
+                running.Dispose();
+                // An older copy (1.0.0 ran from wherever it was saved, and didn't update itself) would otherwise keep
+                // this one from ever installing. Offer to close it; a same-or-newer one is just brought forward.
+                if (!Installer.ReplaceOlderRunning())
+                {
+                    showMe.Set();
+                    return 0;
+                }
+            }
             if (Installer.InstallAndRelaunch(args.Where(a => a != "--updated"))) return 0;
         }
         Installer.CleanUp();

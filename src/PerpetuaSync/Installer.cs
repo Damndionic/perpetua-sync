@@ -46,6 +46,33 @@ static class Installer
         }
     }
 
+    /// <summary>Another Perpetua Sync is running and this one wasn't started from the app folder. If the running one is
+    /// older, ask to close it (so this version can install); returns true if it was closed.</summary>
+    public static bool ReplaceOlderRunning()
+    {
+        var mine = VersionOf(Environment.ProcessPath!);
+        var older = new List<(Process P, Version? V)>();
+        foreach (var p in Process.GetProcessesByName("PerpetuaSync"))
+        {
+            if (p.Id == Environment.ProcessId) continue;
+            string? path = null;
+            try { path = p.MainModule?.FileName; } catch (Exception e) when (e is System.ComponentModel.Win32Exception or InvalidOperationException) { }
+            var v = path == null ? null : VersionOf(path);
+            if (mine != null && (v == null || v < mine)) older.Add((p, v));
+        }
+        if (older.Count == 0) return false;
+        var which = older[0].V is { } ov ? $"Perpetua Sync {ov.ToString(3)}" : "An older Perpetua Sync";
+        var answer = MessageBox.Show($"{which} is running. Close it and install version {mine!.ToString(3)}?",
+            "Perpetua Sync", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+        if (answer != DialogResult.Yes) return false;
+        foreach (var (p, _) in older)
+        {
+            try { p.Kill(); p.WaitForExit(10_000); }
+            catch (Exception e) when (e is System.ComponentModel.Win32Exception or InvalidOperationException) { }
+        }
+        return true;
+    }
+
     static ProcessStartInfo WithArgs(this ProcessStartInfo psi, IEnumerable<string> args)
     {
         foreach (var a in args) psi.ArgumentList.Add(a);
