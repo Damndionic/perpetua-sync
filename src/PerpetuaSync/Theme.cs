@@ -377,6 +377,23 @@ sealed class Section : Panel
     [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
     public string Aside { get => _aside.Text; set { _aside.Text = value; PerformLayout(); } }
 
+    protected override void OnSizeChanged(EventArgs e)
+    {
+        base.OnSizeChanged(e);
+        // Text inside wraps to the box, and rows stretch to it.
+        var inner = Width - Padding.Horizontal;
+        void Walk(Control c)
+        {
+            foreach (Control k in c.Controls)
+            {
+                if (k is WrapLabel l) l.MaximumSize = new Size(Math.Max(60, inner), 0);
+                else if (k is TableLayoutPanel t && t != Body) t.Width = inner;
+                Walk(k);
+            }
+        }
+        Walk(Body);
+    }
+
     protected override void OnLayout(LayoutEventArgs e)
     {
         base.OnLayout(e);
@@ -445,7 +462,7 @@ sealed class TabStrip : Control
         TabStop = true;
         Margin = new Padding(0, 6, 0, 0);
         using var g = CreateGraphics();
-        var w = names.Sum(n => Theme.MeasureSpaced(g, n.ToUpperInvariant(), Font, .16f).Width + 36);
+        var w = names.Sum(n => Theme.MeasureSpaced(g, n.ToUpperInvariant(), Font, .16f).Width + 24);
         Size = new Size((int)Math.Ceiling(w), (int)Math.Ceiling(Theme.MeasureSpaced(g, "H", Font, 0).Height) + 16);
     }
 
@@ -462,11 +479,11 @@ sealed class TabStrip : Control
         {
             var t = _names[i].ToUpperInvariant();
             var sz = Theme.MeasureSpaced(g, t, Font, .16f);
-            var box = new RectangleF(x, 0, sz.Width + 36, Height);
+            var box = new RectangleF(x, 0, sz.Width + 24, Height);
             _boxes[i] = box;
             var on = i == _index;
-            Theme.DrawSpaced(g, t, Font, on ? Theme.Gold : i == _hover ? Theme.GoldPale : Theme.Muted, x + 18, 5, .16f);
-            if (on) using (var p = new Pen(Theme.Gold, 2)) g.DrawLine(p, x + 18, Height - 3, x + 18 + sz.Width, Height - 3);
+            Theme.DrawSpaced(g, t, Font, on ? Theme.Gold : i == _hover ? Theme.GoldPale : Theme.Muted, x + 2, 5, .16f);
+            if (on) using (var p = new Pen(Theme.Gold, 2)) g.DrawLine(p, x + 2, Height - 3, x + 2 + sz.Width, Height - 3);
             if (on && Focused && ShowFocusCues) using (var f = new Pen(Theme.GoldPale) { DashStyle = System.Drawing.Drawing2D.DashStyle.Dot }) g.DrawRectangle(f, x + 4, 1, box.Width - 9, Height - 3);
             x += box.Width;
         }
@@ -572,4 +589,70 @@ sealed class WordLink : Control
 
     protected override void OnPaint(PaintEventArgs e) =>
         Theme.DrawSpaced(e.Graphics, Text.ToUpperInvariant(), Font, _over || Focused ? Theme.GoldPale : Theme.Muted, 2, 5, .16f);
+}
+
+/// <summary>A checkbox in the site's style: a gold-edged box with a gold tick, and wrapping Cormorant text.</summary>
+sealed class GoldCheck : Control
+{
+    bool _checked, _over;
+    public event EventHandler? CheckedChanged;
+
+    [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+    public bool Checked
+    {
+        get => _checked;
+        set { if (_checked == value) return; _checked = value; Invalidate(); CheckedChanged?.Invoke(this, EventArgs.Empty); }
+    }
+
+    public GoldCheck(string text)
+    {
+        SetStyle(ControlStyles.SupportsTransparentBackColor | ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.ResizeRedraw | ControlStyles.Selectable, true);
+        BackColor = Color.Transparent;
+        ForeColor = Theme.Text;
+        Font = Theme.Serif(12f);
+        Cursor = Cursors.Hand;
+        TabStop = true;
+        Text = text;
+        AccessibleRole = AccessibleRole.CheckButton;
+        AccessibleName = text;
+        Fit();
+    }
+
+    int Box => (int)Math.Round(Font.GetHeight() * .8);
+
+    void Fit()
+    {
+        using var g = CreateGraphics();
+        var sz = g.MeasureString(Text, Font);
+        Size = new Size(Box + 10 + (int)Math.Ceiling(sz.Width) + 4, (int)Math.Ceiling(Math.Max(sz.Height, Box)) + 4);
+    }
+
+    protected override void OnTextChanged(EventArgs e) { base.OnTextChanged(e); Fit(); Invalidate(); }
+    protected override void OnMouseEnter(EventArgs e) { _over = true; Invalidate(); base.OnMouseEnter(e); }
+    protected override void OnMouseLeave(EventArgs e) { _over = false; Invalidate(); base.OnMouseLeave(e); }
+    protected override void OnGotFocus(EventArgs e) { Invalidate(); base.OnGotFocus(e); }
+    protected override void OnLostFocus(EventArgs e) { Invalidate(); base.OnLostFocus(e); }
+    protected override void OnMouseClick(MouseEventArgs e) { Focus(); Checked = !Checked; base.OnMouseClick(e); }
+    protected override bool IsInputKey(Keys k) => k == Keys.Space || base.IsInputKey(k);
+    protected override void OnKeyDown(KeyEventArgs e) { if (e.KeyCode == Keys.Space) Checked = !Checked; base.OnKeyDown(e); }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        var g = e.Graphics;
+        g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+        var b = Box;
+        var top = (Height - b) / 2;
+        var box = new Rectangle(1, top, b, b);
+        using (var fill = new SolidBrush(Theme.Midnight)) g.FillRectangle(fill, box);
+        using (var edge = new Pen(_over || Focused ? Theme.GoldPale : Theme.Gold)) g.DrawRectangle(edge, box);
+        if (_checked)
+        {
+            using var tick = new Pen(Theme.Gold, Math.Max(2f, b / 7f)) { StartCap = System.Drawing.Drawing2D.LineCap.Round, EndCap = System.Drawing.Drawing2D.LineCap.Round, LineJoin = System.Drawing.Drawing2D.LineJoin.Round };
+            g.DrawLines(tick, [new PointF(box.Left + b * .22f, top + b * .52f), new PointF(box.Left + b * .42f, top + b * .72f), new PointF(box.Left + b * .78f, top + b * .28f)]);
+        }
+        using var ink = new SolidBrush(ForeColor);
+        g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAliasGridFit;
+        var sz = g.MeasureString(Text, Font);
+        g.DrawString(Text, Font, ink, b + 10, (Height - sz.Height) / 2f);
+    }
 }

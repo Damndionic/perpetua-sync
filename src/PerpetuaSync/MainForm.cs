@@ -74,16 +74,8 @@ sealed class MainForm : Form
     string AdminUrl => new Uri(_site.Site, "admin/sync").ToString();
 
     readonly NotifyIcon _tray = new() { Text = "Perpetua Sync" };
-    readonly CheckBox _trayBox = new()
-    {
-        Text = "Keep syncing in the system tray when I close the window", AutoSize = true, ForeColor = Theme.Text,
-        BackColor = Color.Transparent, UseCompatibleTextRendering = true, FlatStyle = FlatStyle.Flat, Margin = Padding.Empty,
-    };
-    readonly CheckBox _startBox = new()
-    {
-        Text = "Start with Windows (in the tray)", AutoSize = true, ForeColor = Theme.Text,
-        BackColor = Color.Transparent, UseCompatibleTextRendering = true, FlatStyle = FlatStyle.Flat, Margin = new Padding(0, 8, 0, 0),
-    };
+    readonly GoldCheck _trayBox = new("Keep syncing in the system tray when I close the window");
+    readonly GoldCheck _startBox = new("Start with Windows (in the tray)") { Margin = new Padding(0, 8, 0, 0) };
     bool _exiting, _toldAboutTray, _startHidden;
 
     public MainForm(Uri site, bool dev, EventWaitHandle showMe, bool startHidden = false)
@@ -100,7 +92,7 @@ sealed class MainForm : Form
         BackColor = Theme.Navy;
         ForeColor = Theme.Text;
         // A small utility window, always the size it was designed at (Windows scales it with the display).
-        ClientSize = new Size(440, 540);
+        ClientSize = new Size(880, 540);
         FormBorderStyle = FormBorderStyle.FixedSingle;
         MaximizeBox = false;
         StartPosition = FormStartPosition.CenterScreen;
@@ -137,6 +129,14 @@ sealed class MainForm : Form
         if (_settings.ProtectedKey != null && _site.Key == null)
             Log("The saved connection can't be read on this Windows account. Connect again.");
         Log($"Perpetua Sync {_version} started.");
+        Load += (_, _) =>
+        {
+            foreach (var v in new[] { _home, _activity, _settingsView, _stepFolder, _stepConnect })
+            {
+                v.Bounds = _host.ClientRectangle;
+                v.PerformLayout();
+            }
+        };
         ShowStart();
         // Started with Windows: straight to the tray, unless setup isn't finished (then the window is what's needed).
         _startHidden = startHidden && _site.Key != null && _flavors.Any(f => f.HasAddon);
@@ -156,10 +156,23 @@ sealed class MainForm : Form
 
     void Show(Control view)
     {
-        _host.SuspendLayout();
-        _host.Controls.Clear();
-        _host.Controls.Add(view);
-        _host.ResumeLayout();
+        // Swap screens without showing the in-between: drawing off, the new screen laid out at its final size first,
+        // then one repaint.
+        Redraw(_host, false);
+        try
+        {
+            view.Bounds = _host.ClientRectangle;
+            view.PerformLayout();
+            _host.SuspendLayout();
+            _host.Controls.Clear();
+            _host.Controls.Add(view);
+            _host.ResumeLayout(true);
+        }
+        finally
+        {
+            Redraw(_host, true);
+            _host.Invalidate(true);
+        }
         _bottomBar.Visible = view == _home || view == _activity || view == _settingsView;
         UpdateHome();
     }
@@ -267,7 +280,7 @@ sealed class MainForm : Form
         t.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         var links = Row();
         links.Anchor = AnchorStyles.Right;
-        var site = new WordLink(_site.Site.Host) { Margin = new Padding(0, 6, 14, 0) };
+        var site = new WordLink("perpetua.gg") { Margin = new Padding(0, 6, 12, 0) }; // the dev build opens dev.perpetua.gg
         site.Click += (_, _) => OpenUrl(_site.Site.ToString());
         var discord = new IconLink("discord-gold.png", "discord-pale.png", "Perpetua on Discord") { Size = new Size(24, 24), Margin = new Padding(0, 8, 2, 0) };
         discord.Click += (_, _) => OpenUrl(DiscordInvite);
@@ -294,12 +307,21 @@ sealed class MainForm : Form
 
     Control BuildSettings()
     {
-        var col = Column();
-        var wow = new Section("World of Warcraft") { Dock = DockStyle.None, Anchor = AnchorStyles.Left | AnchorStyles.Right };
-        wow.Body.Controls.Add(FolderRow(_folderSettings, _folderInfoSettings), 0, 0);
-        col.Controls.Add(wow);
+        // The folder across the top; the site and background settings side by side; the version note under them.
+        var grid = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 4, BackColor = Color.Transparent, Padding = new Padding(0, 0, 0, 6) };
+        grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        grid.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        grid.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        grid.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        grid.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
-        var site = new Section(_site.Site.Host) { Dock = DockStyle.None, Anchor = AnchorStyles.Left | AnchorStyles.Right };
+        var wow = new Section("World of Warcraft") { Margin = new Padding(0, 0, 0, 14) };
+        wow.Body.Controls.Add(FolderRow(_folderSettings, _folderInfoSettings), 0, 0);
+        grid.Controls.Add(wow, 0, 0);
+        grid.SetColumnSpan(wow, 2);
+
+        var site = new Section(_site.Site.Host) { Margin = new Padding(0, 0, 7, 14) };
         var text = Words(Theme.Muted, 11.5f);
         text.Text = "Disconnecting revokes this PC's key on the site. Connecting again needs a new approval.";
         var disconnect = new GoldButton("Disconnect", GoldButton.Kinds.Danger) { Margin = new Padding(0, 12, 0, 0) };
@@ -307,40 +329,35 @@ sealed class MainForm : Form
         var inner = Column();
         inner.Controls.AddRange([text, disconnect]);
         site.Body.Controls.Add(inner, 0, 0);
-        col.Controls.Add(site);
+        grid.Controls.Add(site, 0, 1);
 
-        var background = new Section("While it runs") { Dock = DockStyle.None, Anchor = AnchorStyles.Left | AnchorStyles.Right };
-        _trayBox.Font = Theme.Serif(11.5f);
-        _trayBox.FlatAppearance.BorderColor = Theme.Gold;
-        _trayBox.FlatAppearance.CheckedBackColor = Theme.Midnight;
-        _trayBox.Checked = _settings.CloseToTray != false;
+        var background = new Section("While it runs") { Margin = new Padding(7, 0, 0, 14) };
         _trayBox.CheckedChanged += (_, _) => { _settings.CloseToTray = _trayBox.Checked; _settings.Save(_dev); };
-        var exit = new GoldButton("Exit Perpetua Sync") { Margin = new Padding(0, 12, 0, 0) };
-        exit.Click += (_, _) => ExitApp();
-        _startBox.Font = Theme.Serif(11.5f);
-        _startBox.FlatAppearance.BorderColor = Theme.Gold;
-        _startBox.FlatAppearance.CheckedBackColor = Theme.Midnight;
-        _startBox.Checked = _settings.StartWithWindows;
         _startBox.CheckedChanged += (_, _) =>
         {
             _settings.StartWithWindows = _startBox.Checked;
             _settings.Save(_dev);
             Startup.Apply(_startBox.Checked, _dev);
         };
+        _trayBox.Checked = _settings.CloseToTray != false;
+        _startBox.Checked = _settings.StartWithWindows;
+        var exit = new GoldButton("Exit Perpetua Sync") { Margin = new Padding(0, 12, 0, 0) };
+        exit.Click += (_, _) => ExitApp();
         var bg = Column();
         bg.Controls.AddRange([_trayBox, _startBox, exit]);
         background.Body.Controls.Add(bg, 0, 0);
-        col.Controls.Add(background);
+        grid.Controls.Add(background, 1, 1);
 
         var about = Words(Theme.Muted, 10.5f, italic: true);
         about.Text = $"Version {_version}. Runs as you, never as administrator. Only connects to {_site.Site.Host}. "
                    + "Reads the addon's Perpetua.lua and writes only its SiteData.lua.";
-        col.Controls.Add(about);
-        var wrap = Centered(col);
-        ((ScrollableControl)wrap).AutoScroll = true; // the fixed window may be shorter than Settings
-        // Sections fill the width here.
-        wrap.Resize += (_, _) => { foreach (Control c in col.Controls) if (c is Section) c.Width = col.ClientSize.Width - 2; };
-        return wrap;
+        about.Margin = new Padding(2, 0, 0, 0);
+        grid.Controls.Add(about, 0, 2);
+        grid.SetColumnSpan(about, 2);
+        grid.Resize += (_, _) => about.MaximumSize = new Size(Math.Max(100, grid.ClientSize.Width - 4), 0);
+        // The two side-by-side boxes the same height.
+        grid.Layout += (_, _) => { var h = Math.Max(site.PreferredSize.Height, background.PreferredSize.Height); site.MinimumSize = background.MinimumSize = new Size(0, h); };
+        return grid;
     }
 
     /// <summary>"STEP 1 OF 2" over a heading, as the top of a setup screen.</summary>
@@ -372,7 +389,6 @@ sealed class MainForm : Form
         info.Margin = new Padding(0, 8, 0, 0);
         col.Controls.Add(row);
         col.Controls.Add(info);
-        col.Resize += (_, _) => row.Width = col.ClientSize.Width;
         col.Dock = DockStyle.Top;
         return col;
     }
@@ -478,6 +494,25 @@ sealed class MainForm : Form
         public override Color ImageMarginGradientBegin => Theme.Midnight;
         public override Color ImageMarginGradientMiddle => Theme.Midnight;
         public override Color ImageMarginGradientEnd => Theme.Midnight;
+    }
+
+    // The whole window is composed off-screen, so see-through controls over the gradient appear in one piece.
+    protected override CreateParams CreateParams
+    {
+        get
+        {
+            var cp = base.CreateParams;
+            cp.ExStyle |= 0x02000000; // WS_EX_COMPOSITED
+            return cp;
+        }
+    }
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    static extern IntPtr SendMessage(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam);
+
+    static void Redraw(Control c, bool on)
+    {
+        if (c.IsHandleCreated) SendMessage(c.Handle, 0x000B /* WM_SETREDRAW */, on ? 1 : 0, IntPtr.Zero);
     }
 
     // ---------- small layout helpers ----------
