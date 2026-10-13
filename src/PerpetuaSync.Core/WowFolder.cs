@@ -57,16 +57,24 @@ public static class WowFolder
         return list;
     }
 
+    /// <summary>A game folder's name for people: "_classic_beta_" -> "Classic beta".</summary>
+    public static string Friendly(string flavor)
+    {
+        var s = flavor.Trim('_').Replace('_', ' ');
+        return s.Length == 0 ? flavor : char.ToUpperInvariant(s[0]) + s[1..];
+    }
+
     /// <summary>A plain-English check of a picked folder, for the window.</summary>
     public static string Describe(List<Flavor> flavors)
     {
-        if (flavors.Count == 0) return "No World of Warcraft game folders here. Pick the \"World of Warcraft\" folder.";
-        var parts = flavors.Select(f =>
+        if (flavors.Count == 0) return "No WoW game found in this folder. Pick the \"World of Warcraft\" folder itself.";
+        var withAddon = flavors.Where(f => f.HasAddon).ToList();
+        if (withAddon.Count == 0) return "Found WoW, but the Perpetua addon isn't installed. Install it, then come back.";
+        return string.Join("  ·  ", withAddon.Select(f =>
         {
             var saved = f.SavedVariables().Count();
-            return $"{f.Name}: " + (f.HasAddon ? "addon installed" : "addon not installed") +
-                   (saved > 0 ? $", {saved} account{(saved == 1 ? "" : "s")} with Perpetua data" : ", no Perpetua data yet");
-        });
-        return string.Join("; ", parts);
+            return $"{Friendly(f.Name)}: Perpetua addon found" +
+                   (saved > 0 ? $", {saved} account{(saved == 1 ? "" : "s")} with guild data" : ", no guild data yet (log in once with the addon)");
+        }));
     }
 }

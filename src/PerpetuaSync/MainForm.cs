@@ -142,8 +142,8 @@ sealed class MainForm : Form
     {
         var col = Screen("Step 1 of 2", "Find World of Warcraft");
         var text = Words(Theme.Text, 12.5f);
-        text.Text = "Pick the folder WoW Forever is installed in: the \"World of Warcraft\" folder with the _classic_ folders inside. "
-                  + "The Perpetua addon needs to be installed there.";
+        text.Text = "Pick the \"World of Warcraft\" folder that Battle.net installed WoW Forever into, usually "
+                  + "C:\\Program Files (x86)\\World of Warcraft. The Perpetua addon needs to be installed in the game.";
         col.Controls.Add(text);
         col.Controls.Add(FolderRow(_folderStep, _folderInfoStep));
         _next.Margin = new Padding(0, 22, 0, 0);
@@ -370,7 +370,7 @@ sealed class MainForm : Form
     {
         using var dlg = new FolderBrowserDialog
         {
-            Description = "Pick your \"World of Warcraft\" folder (the one with the _classic_ folders in it).",
+            Description = "Pick the \"World of Warcraft\" folder that Battle.net installed WoW Forever into.",
             UseDescriptionForTitle = true,
             InitialDirectory = _settings.WowFolder ?? WowFolder.Guess() ?? "",
         };
