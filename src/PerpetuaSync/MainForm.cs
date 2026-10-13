@@ -74,7 +74,7 @@ sealed class MainForm : Form
     string AdminUrl => new Uri(_site.Site, "admin/sync").ToString();
 
     readonly NotifyIcon _tray = new() { Text = "Perpetua Sync" };
-    readonly GoldCheck _trayBox = new("Keep syncing in the system tray when I close the window");
+    readonly GoldCheck _trayBox = new("Keep syncing in the tray when the window is closed");
     readonly GoldCheck _startBox = new("Start with Windows (in the tray)") { Margin = new Padding(0, 8, 0, 0) };
     bool _exiting, _toldAboutTray, _startHidden;
 
@@ -355,8 +355,6 @@ sealed class MainForm : Form
         grid.Controls.Add(about, 0, 2);
         grid.SetColumnSpan(about, 2);
         grid.Resize += (_, _) => about.MaximumSize = new Size(Math.Max(100, grid.ClientSize.Width - 4), 0);
-        // The two side-by-side boxes the same height.
-        grid.Layout += (_, _) => { var h = Math.Max(site.PreferredSize.Height, background.PreferredSize.Height); site.MinimumSize = background.MinimumSize = new Size(0, h); };
         return grid;
     }
 
@@ -377,7 +375,8 @@ sealed class MainForm : Form
     Control FolderRow(Field field, Label info)
     {
         var col = Column();
-        var row = new TableLayoutPanel { ColumnCount = 2, AutoSize = true, BackColor = Color.Transparent, Margin = new Padding(0, 16, 0, 0), Dock = DockStyle.Top };
+        // Not AutoSize: the section (or the step screen) sets its width, and the field takes what the button leaves.
+        var row = new TableLayoutPanel { ColumnCount = 2, BackColor = Color.Transparent, Margin = new Padding(0, 16, 0, 0) };
         row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         row.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         field.Dock = DockStyle.None;
@@ -386,6 +385,8 @@ sealed class MainForm : Form
         choose.Click += (_, _) => ChooseFolder();
         row.Controls.Add(field, 0, 0);
         row.Controls.Add(choose, 1, 0);
+        row.Height = Math.Max(field.Height, choose.Height) + 6;
+        row.Width = 400;
         info.Margin = new Padding(0, 8, 0, 0);
         col.Controls.Add(row);
         col.Controls.Add(info);

@@ -334,10 +334,11 @@ sealed class GoldButton : Button
         var text = Text.ToUpperInvariant();
         var sz = Theme.MeasureSpaced(g, text, Font, .14f);
         Theme.DrawSpaced(g, text, Font, ink, (Width - sz.Width) / 2f, (Height - sz.Height) / 2f, .14f);
-        if (Focused && ShowFocusCues)
+        if (Focused && ShowFocusCues && Enabled)
         {
-            using var f = new Pen(Theme.GoldPale) { DashStyle = DashStyle.Dot };
-            g.DrawRectangle(f, 2, 2, Width - 5, Height - 5);
+            // Keyboard focus: a second, pale-gold edge just inside the button's own.
+            using var f = new Pen(Theme.GoldPale);
+            g.DrawRectangle(f, 1, 1, Width - 3, Height - 3);
         }
     }
 }
@@ -387,6 +388,7 @@ sealed class Section : Panel
             foreach (Control k in c.Controls)
             {
                 if (k is WrapLabel l) l.MaximumSize = new Size(Math.Max(60, inner), 0);
+                else if (k is GoldCheck gc) gc.MaximumSize = new Size(Math.Max(60, inner), 0);
                 else if (k is TableLayoutPanel t && t != Body) t.Width = inner;
                 Walk(k);
             }
@@ -482,9 +484,10 @@ sealed class TabStrip : Control
             var box = new RectangleF(x, 0, sz.Width + 24, Height);
             _boxes[i] = box;
             var on = i == _index;
-            Theme.DrawSpaced(g, t, Font, on ? Theme.Gold : i == _hover ? Theme.GoldPale : Theme.Muted, x + 2, 5, .16f);
+            // Keyboard focus: the chosen tab turns pale gold (no dotted box).
+            var color = on ? (Focused && ShowFocusCues ? Theme.GoldPale : Theme.Gold) : i == _hover ? Theme.GoldPale : Theme.Muted;
+            Theme.DrawSpaced(g, t, Font, color, x + 2, 5, .16f);
             if (on) using (var p = new Pen(Theme.Gold, 2)) g.DrawLine(p, x + 2, Height - 3, x + 2 + sz.Width, Height - 3);
-            if (on && Focused && ShowFocusCues) using (var f = new Pen(Theme.GoldPale) { DashStyle = System.Drawing.Drawing2D.DashStyle.Dot }) g.DrawRectangle(f, x + 4, 1, box.Width - 9, Height - 3);
             x += box.Width;
         }
     }
@@ -620,12 +623,16 @@ sealed class GoldCheck : Control
 
     int Box => (int)Math.Round(Font.GetHeight() * .8);
 
+    int TextWidth => MaximumSize.Width > 0 ? MaximumSize.Width - Box - 14 : 10_000;
+
     void Fit()
     {
         using var g = CreateGraphics();
-        var sz = g.MeasureString(Text, Font);
+        var sz = g.MeasureString(Text, Font, Math.Max(40, TextWidth));
         Size = new Size(Box + 10 + (int)Math.Ceiling(sz.Width) + 4, (int)Math.Ceiling(Math.Max(sz.Height, Box)) + 4);
     }
+
+    public override Size MaximumSize { get => base.MaximumSize; set { base.MaximumSize = value; Fit(); } }
 
     protected override void OnTextChanged(EventArgs e) { base.OnTextChanged(e); Fit(); Invalidate(); }
     protected override void OnMouseEnter(EventArgs e) { _over = true; Invalidate(); base.OnMouseEnter(e); }
@@ -652,7 +659,7 @@ sealed class GoldCheck : Control
         }
         using var ink = new SolidBrush(ForeColor);
         g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAliasGridFit;
-        var sz = g.MeasureString(Text, Font);
-        g.DrawString(Text, Font, ink, b + 10, (Height - sz.Height) / 2f);
+        var sz = g.MeasureString(Text, Font, Math.Max(40, TextWidth));
+        g.DrawString(Text, Font, ink, new RectangleF(b + 10, (Height - sz.Height) / 2f, sz.Width + 2, sz.Height + 2));
     }
 }
