@@ -170,5 +170,25 @@ Console.WriteLine("Keys");
     Throws<ArgumentException>(() => new SiteClient(new Uri("https://evil.example/"), "1"), "no site but perpetua.gg / dev");
 }
 
+Console.WriteLine("Updates");
+Check(Updates.DownloadUrl(new Version(1, 2, 3)).ToString() == "https://github.com/Damndionic/perpetua-sync/releases/download/v1.2.3/PerpetuaSync.exe",
+      "the download address is built from the version, on this repo's releases");
+if (Environment.GetEnvironmentVariable("PERPETUA_NETWORK_TESTS") == "1")
+{
+    // The real 1.0.0 release from GitHub: the right hash installs, a wrong one leaves nothing behind.
+    var dir = Path.Combine(Path.GetTempPath(), "perpetua-update-test-" + Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(dir);
+    var good = new Release(new Version(1, 0, 0), "a84ce006860af22a23eae5badeb086958568db01589c7b543aeff92f2de1662c");
+    await Updates.Download(good, Path.Combine(dir, "ok.exe"), "PerpetuaSync-tests");
+    Check(new FileInfo(Path.Combine(dir, "ok.exe")).Length > 1_000_000, "downloads a release from GitHub when its SHA-256 matches");
+    var bad = good with { Sha256 = new string('0', 64) };
+    var refused = false;
+    try { await Updates.Download(bad, Path.Combine(dir, "bad.exe"), "PerpetuaSync-tests"); }
+    catch (InvalidDataException) { refused = true; }
+    Check(refused && Directory.GetFiles(dir).Length == 1, "refuses a download whose SHA-256 doesn't match, and leaves no file");
+    Directory.Delete(dir, true);
+}
+else Console.WriteLine("  (network tests skipped: set PERPETUA_NETWORK_TESTS=1)");
+
 Console.WriteLine(failures == 0 ? "ALL PASS" : $"{failures} FAILED");
 return failures == 0 ? 0 : 1;

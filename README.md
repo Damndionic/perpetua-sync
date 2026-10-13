@@ -6,6 +6,9 @@ brings the site's raid calendar and forums back into the addon.
 
 ## What it does, and doesn't do
 
+- **Lives in** `%LOCALAPPDATA%\Programs\Perpetua Sync\` for your Windows user only (no administrator): the first
+  run copies the exe there and adds a Start menu shortcut, so it doesn't depend on where you saved the download.
+- **Syncs one game**: you pick which game in your World of Warcraft folder is WoW Forever (Settings changes it).
 - **Reads** the addon's saved data, `WTF\Account\<account>\SavedVariables\Perpetua.lua`, in your WoW folder. It reads it
   as data: it never runs it.
 - **Writes one file**: `Interface\AddOns\Perpetua\SiteData.lua` (the calendar and forums for the addon), and only where
@@ -18,7 +21,11 @@ brings the site's raid calendar and forums back into the addon.
   `%LOCALAPPDATA%\Perpetua Sync\`.
 - **Starts with Windows** in the system tray (turn it off in Settings), via your own user's Run key. Closing the window
   keeps it syncing in the tray; Exit (tray menu or Settings) stops it.
-- No telemetry, no ads, no auto-update, no third-party packages: only .NET itself.
+- **Updates itself**, safely: it asks perpetua.gg which version is current and what its exe's SHA-256 is, downloads
+  that version only from this repository's GitHub releases (the address is fixed in the code), and installs it only if
+  the SHA-256 matches. It never goes back to an older version. In the tray it updates by itself; with the window open
+  it offers "Restart to update".
+- No telemetry, no ads, no third-party packages: only .NET itself.
 
 ## How connecting works
 
@@ -51,7 +58,8 @@ dotnet run --project tests/PerpetuaSync.Tests      # tests; ends "ALL PASS"
 dotnet publish src/PerpetuaSync -c Release -o out  # out/PerpetuaSync.exe, .NET included
 ```
 
-`PerpetuaSync.exe --dev` uses the test site (dev.perpetua.gg) with its own settings.
+`PerpetuaSync.exe --dev` uses the test site (dev.perpetua.gg) with its own settings; `--portable` runs it where it
+is instead of installing it.
 
 ## Fonts
 

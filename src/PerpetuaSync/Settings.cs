@@ -44,6 +44,8 @@ sealed class Settings
         File.Move(tmp, file, true);
     }
 
+    // Never written to the file: only ProtectedKey is. (1.0.0 wrote this in plain text too; Load + Save scrubs it.)
+    [System.Text.Json.Serialization.JsonIgnore]
     public string? Key
     {
         get

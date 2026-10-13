@@ -81,10 +81,17 @@ sealed class MainForm : Form
     readonly GoldCheck _startBox = new("Start with Windows (in the tray)") { Margin = new Padding(0, 8, 0, 0) };
     bool _exiting, _toldAboutTray, _startHidden;
 
-    public MainForm(Uri site, bool dev, EventWaitHandle showMe, bool startHidden = false)
+    static readonly TimeSpan UpdateEvery = TimeSpan.FromHours(6);
+    Release? _ready;                       // an update downloaded and checked, waiting to be installed
+    DateTime _nextUpdateCheck = DateTime.UtcNow.AddSeconds(15);
+    bool _checkingUpdate;
+    readonly GoldButton _restart = new("Restart to update", GoldButton.Kinds.Solid) { Visible = false, Margin = new Padding(0, 16, 0, 0) };
+
+    public MainForm(Uri site, bool dev, EventWaitHandle showMe, bool startHidden = false, bool updated = false)
     {
         _dev = dev;
         _settings = Settings.Load(dev);
+        _settings.Save(dev); // rewrites the file in the current format (drops the plain-text key 1.0.0 also saved)
         _site = new SiteClient(site, _version) { Key = _settings.Key };
         _syncer = new Syncer(_site, Path.Combine(Settings.StateFolder, dev ? "state-dev.json" : "state.json"), Log);
 
@@ -118,7 +125,7 @@ sealed class MainForm : Form
 
         HandleCreated += (_, _) => { Theme.DarkTitleBar(this); DarkScrollbars(_log); };
         _tabs.Selected += i => Show(i switch { 1 => _activity, 2 => _settingsView, _ => _home });
-        _timer.Tick += async (_, _) => await Tick();
+        _timer.Tick += async (_, _) => { await Tick(); await CheckForUpdate(); };
         _countdown.Tick += (_, _) => ShowCountdown();
         FormClosing += OnClosing;
         FormClosed += (_, _) => { _tray.Visible = false; _tray.Dispose(); };
@@ -131,7 +138,7 @@ sealed class MainForm : Form
         SetFolder(_settings.WowFolder, save: false);
         if (_settings.ProtectedKey != null && _site.Key == null)
             Log("The saved connection can't be read on this Windows account. Connect again.");
-        Log($"Perpetua Sync {_version} started.");
+        Log(updated ? $"Updated to Perpetua Sync {_version}." : $"Perpetua Sync {_version} started.");
         Load += (_, _) =>
         {
             foreach (var v in new[] { _home, _activity, _settingsView, _stepFolder, _stepConnect })
@@ -253,7 +260,8 @@ sealed class MainForm : Form
         _sync.Click += (_, _) => { _forceNext = true; _ = Tick(); };
         _status.TextAlign = ContentAlignment.MiddleCenter;
         _status.Margin = new Padding(0, 14, 0, 0);
-        var items = new List<Control> { crest, title, _who, _sync, _status };
+        _restart.Click += (_, _) => InstallUpdate();
+        var items = new List<Control> { crest, title, _who, _sync, _status, _restart };
         if (_dev)
         {
             var dev = Words(Theme.GoldWarm, 11f, italic: true);
@@ -809,6 +817,62 @@ sealed class MainForm : Form
 
     // Only ever fixed addresses (the guild site and its Discord invite), opened in the default browser.
     static void OpenUrl(string url) => Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
+
+    // ---------- updates ----------
+
+    Version Current => typeof(MainForm).Assembly.GetName().Version is { } v ? new Version(v.Major, v.Minor, v.Build) : new Version(0, 0, 0);
+
+    /// <summary>Every few hours: is there a newer version? If so, download and check it (Core/Updates.cs). In the tray
+    /// it installs straight away; with the window open it waits for "Restart to update".</summary>
+    async Task CheckForUpdate()
+    {
+        if (_ready != null && !Visible) { InstallUpdate(); return; } // waiting since the window was open; it's in the tray now
+        if (_checkingUpdate || DateTime.UtcNow < _nextUpdateCheck || !Installer.RunningInstalled) return;
+        _checkingUpdate = true;
+        _nextUpdateCheck = DateTime.UtcNow + UpdateEvery;
+        try
+        {
+            var release = await Updates.Check(_site, Current);
+            if (release == null) return;
+            if (_ready?.Version != release.Version)
+            {
+                Log($"Downloading Perpetua Sync {release.Version}…");
+                await Updates.Download(release, Installer.Pending, $"PerpetuaSync-Windows/{_version}");
+                _ready = release;
+                Log($"Perpetua Sync {release.Version} is downloaded and checked.");
+            }
+            _restart.Text = $"Restart to update to {release.Version}";
+            _restart.Visible = true;
+            UpdateHome();
+            if (!Visible) InstallUpdate(); // in the tray: nobody to interrupt
+        }
+        catch (Exception e) when (e is SiteException or HttpRequestException or TaskCanceledException or IOException or InvalidDataException or UnauthorizedAccessException)
+        {
+            Log($"Update check failed ({e.Message}); trying again later.");
+            _nextUpdateCheck = DateTime.UtcNow + TimeSpan.FromMinutes(30);
+        }
+        finally { _checkingUpdate = false; }
+    }
+
+    void InstallUpdate()
+    {
+        if (_ready == null || _busy || _pairing != null) return; // not mid-sync or mid-connect; the next tick tries again
+        try
+        {
+            var args = new List<string>();
+            if (!Visible) args.Add("--tray");
+            if (_dev) args.Add("--dev");
+            Installer.ApplyAndRestart(args);
+            _exiting = true;
+            Close();
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.ComponentModel.Win32Exception)
+        {
+            Log($"Couldn't install the update ({e.Message}). It will try again later.");
+            _ready = null;
+            _restart.Visible = false;
+        }
+    }
 
     // ---------- syncing ----------
 
