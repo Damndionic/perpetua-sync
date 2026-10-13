@@ -381,7 +381,12 @@ sealed class Section : Panel
     protected override void OnSizeChanged(EventArgs e)
     {
         base.OnSizeChanged(e);
-        // Text inside wraps to the box, and rows stretch to it.
+        Rewrap();
+    }
+
+    /// <summary>Text inside wraps to the box, and rows stretch to it. Call again after adding controls.</summary>
+    public void Rewrap()
+    {
         var inner = Width - Padding.Horizontal;
         void Walk(Control c)
         {

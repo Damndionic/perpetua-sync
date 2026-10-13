@@ -15,7 +15,7 @@
     <AssemblyName>PerpetuaSync</AssemblyName>
     <RootNamespace>PerpetuaSync</RootNamespace>
 
-    <Version>1.1.1</Version>
+    <Version>1.1.2</Version>
     <Product>Perpetua Sync</Product>
     <Company>Perpetua</Company>
     <Description>Syncs the Perpetua addon with perpetua.gg</Description>

@@ -325,25 +325,25 @@ sealed class MainForm : Form
 
     Control BuildSettings()
     {
-        // The folder across the top; the site and background settings side by side; the version note under them.
-        var grid = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 4, BackColor = Color.Transparent, Padding = new Padding(0, 0, 0, 6), AutoScroll = true };
-        grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
-        grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
-        grid.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        // Two columns: the game on the left (its list can be long), the site and background settings stacked on the
+        // right, the version note under both. Scrolls if a WoW folder has a lot of games in it.
+        var grid = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 3, BackColor = Color.Transparent, Padding = new Padding(0, 0, 0, 6), AutoScroll = true };
+        grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 55));
+        grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 45));
         grid.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         grid.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         grid.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
-        var wow = new Section("World of Warcraft") { Margin = new Padding(0, 0, 0, 14) };
+        var wow = new Section("World of Warcraft") { Margin = new Padding(0, 0, 7, 14) };
         var wowCol = Column();
         wowCol.Controls.Add(FolderRow(_folderSettings, _folderInfoSettings));
         _pickerSettings.Margin = new Padding(0, 8, 0, 0);
         wowCol.Controls.Add(_pickerSettings);
         wow.Body.Controls.Add(wowCol, 0, 0);
         grid.Controls.Add(wow, 0, 0);
-        grid.SetColumnSpan(wow, 2);
+        grid.SetRowSpan(wow, 2);
 
-        var site = new Section(_site.Site.Host) { Margin = new Padding(0, 0, 7, 14) };
+        var site = new Section(_site.Site.Host) { Margin = new Padding(7, 0, 0, 14) };
         var text = Words(Theme.Muted, 11.5f);
         text.Text = "Disconnecting revokes this PC's key on the site. Connecting again needs a new approval.";
         var disconnect = new GoldButton("Disconnect", GoldButton.Kinds.Danger) { Margin = new Padding(0, 12, 0, 0) };
@@ -351,7 +351,7 @@ sealed class MainForm : Form
         var inner = Column();
         inner.Controls.AddRange([text, disconnect]);
         site.Body.Controls.Add(inner, 0, 0);
-        grid.Controls.Add(site, 0, 1);
+        grid.Controls.Add(site, 1, 0);
 
         var background = new Section("While it runs") { Margin = new Padding(7, 0, 0, 14) };
         _trayBox.CheckedChanged += (_, _) => { _settings.CloseToTray = _trayBox.Checked; _settings.Save(_dev); };
@@ -703,6 +703,7 @@ sealed class MainForm : Form
             host.Controls.Add(warn);
         }
         host.ResumeLayout(true);
+        for (var c = host.Parent; c != null; c = c.Parent) if (c is Section sec) { sec.Rewrap(); break; }
     }
 
     List<string> SavedFiles() => _flavors.SelectMany(f => f.SavedVariables()).ToList();
