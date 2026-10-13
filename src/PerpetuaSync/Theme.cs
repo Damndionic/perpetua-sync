@@ -427,3 +427,76 @@ sealed class WrapLabel : Label
         return new Size(Math.Min(max, (int)Math.Ceiling(sz.Width) + Padding.Horizontal + 4), (int)Math.Ceiling(sz.Height) + Padding.Vertical + 2);
     }
 }
+
+/// <summary>A clickable picture (gold, pale gold on hover), drawn smoothly at any size.</summary>
+sealed class IconLink : Control
+{
+    readonly Image _normal, _hover;
+    bool _over;
+
+    public IconLink(string normal, string hover, string tip)
+    {
+        SetStyle(ControlStyles.SupportsTransparentBackColor | ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.Selectable, true);
+        BackColor = Color.Transparent;
+        Cursor = Cursors.Hand;
+        TabStop = true;
+        AccessibleName = tip;
+        AccessibleRole = AccessibleRole.Link;
+        _normal = Load(normal);
+        _hover = Load(hover);
+        new ToolTip().SetToolTip(this, tip);
+    }
+
+    static Image Load(string name)
+    {
+        using var s = typeof(IconLink).Assembly.GetManifestResourceStream(name)!;
+        return Image.FromStream(s);
+    }
+
+    protected override void OnMouseEnter(EventArgs e) { _over = true; Invalidate(); base.OnMouseEnter(e); }
+    protected override void OnMouseLeave(EventArgs e) { _over = false; Invalidate(); base.OnMouseLeave(e); }
+    protected override void OnGotFocus(EventArgs e) { Invalidate(); base.OnGotFocus(e); }
+    protected override void OnLostFocus(EventArgs e) { Invalidate(); base.OnLostFocus(e); }
+    protected override void OnMouseClick(MouseEventArgs e) { OnClick(e); }
+    protected override bool IsInputKey(Keys k) => k is Keys.Enter or Keys.Space || base.IsInputKey(k);
+    protected override void OnKeyDown(KeyEventArgs e) { if (e.KeyCode is Keys.Enter or Keys.Space) OnClick(e); base.OnKeyDown(e); }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        e.Graphics.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+        e.Graphics.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.HighQuality;
+        e.Graphics.DrawImage(_over || Focused ? _hover : _normal, new Rectangle(0, 0, Width, Height));
+    }
+}
+
+/// <summary>Spaced Cinzel words that act as a link (muted, pale gold on hover), for the bottom bar.</summary>
+sealed class WordLink : Control
+{
+    bool _over;
+
+    public WordLink(string text)
+    {
+        SetStyle(ControlStyles.SupportsTransparentBackColor | ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.Selectable, true);
+        BackColor = Color.Transparent;
+        Cursor = Cursors.Hand;
+        TabStop = true;
+        Text = text;
+        AccessibleName = text;
+        AccessibleRole = AccessibleRole.Link;
+        Font = Theme.Display(8.5f);
+        using var g = CreateGraphics();
+        var sz = Theme.MeasureSpaced(g, text.ToUpperInvariant(), Font, .16f);
+        Size = new Size((int)Math.Ceiling(sz.Width) + 4, (int)Math.Ceiling(sz.Height) + 16);
+    }
+
+    protected override void OnMouseEnter(EventArgs e) { _over = true; Invalidate(); base.OnMouseEnter(e); }
+    protected override void OnMouseLeave(EventArgs e) { _over = false; Invalidate(); base.OnMouseLeave(e); }
+    protected override void OnGotFocus(EventArgs e) { Invalidate(); base.OnGotFocus(e); }
+    protected override void OnLostFocus(EventArgs e) { Invalidate(); base.OnLostFocus(e); }
+    protected override void OnMouseClick(MouseEventArgs e) { OnClick(e); }
+    protected override bool IsInputKey(Keys k) => k is Keys.Enter or Keys.Space || base.IsInputKey(k);
+    protected override void OnKeyDown(KeyEventArgs e) { if (e.KeyCode is Keys.Enter or Keys.Space) OnClick(e); base.OnKeyDown(e); }
+
+    protected override void OnPaint(PaintEventArgs e) =>
+        Theme.DrawSpaced(e.Graphics, Text.ToUpperInvariant(), Font, _over || Focused ? Theme.GoldPale : Theme.Muted, 2, 5, .16f);
+}

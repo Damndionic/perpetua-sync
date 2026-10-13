@@ -38,6 +38,8 @@
   <ItemGroup>
     <ProjectReference Include="../PerpetuaSync.Core/PerpetuaSync.Core.csproj" />
     <EmbeddedResource Include="Assets\perpetua.ico" LogicalName="perpetua.ico" />
+    <EmbeddedResource Include="Assets\discord-gold.png" LogicalName="discord-gold.png" />
+    <EmbeddedResource Include="Assets\discord-pale.png" LogicalName="discord-pale.png" />
     <!-- The site's fonts, from the addon (Media/Fonts), with their licenses (SIL OFL 1.1). -->
     <EmbeddedResource Include="Assets\Fonts\*.ttf" />
     <EmbeddedResource Include="Assets\Fonts\OFL-*.txt" />

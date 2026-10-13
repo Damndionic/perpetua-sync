@@ -18,6 +18,7 @@ sealed class MainForm : Form
     static readonly TimeSpan RetryAfterError = TimeSpan.FromSeconds(30);
     static readonly TimeSpan PairPoll = TimeSpan.FromSeconds(3);
     static readonly TimeSpan PairFor = TimeSpan.FromMinutes(10);
+    const string DiscordInvite = "https://discord.gg/B57dYAKaZ2"; // the guild's invite, as on the site (DISCORD_INVITE)
 
     readonly bool _dev;
     readonly Settings _settings;
@@ -36,7 +37,8 @@ sealed class MainForm : Form
     // Screens, swapped inside _host.
     readonly Panel _host = new() { Dock = DockStyle.Fill, BackColor = Color.Transparent };
     readonly Control _stepFolder, _stepConnect, _home, _activity, _settingsView;
-    readonly TabStrip _tabs = new(["Home", "Activity", "Settings"]) { Anchor = AnchorStyles.None };
+    readonly TabStrip _tabs = new(["Home", "Activity", "Settings"]) { Anchor = AnchorStyles.Left };
+    readonly Control _bottomBar = new Panel();
 
     // Step 1 and Settings share these: there's one folder.
     readonly Field _folderStep = new(), _folderSettings = new();
@@ -99,7 +101,7 @@ sealed class MainForm : Form
         page.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         page.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         page.Controls.Add(_host, 0, 0);
-        page.Controls.Add(_tabs, 0, 1);
+        page.Controls.Add(BuildBottomBar(), 0, 1);
         root.Controls.Add(page);
         Controls.Add(root);
 
@@ -134,7 +136,7 @@ sealed class MainForm : Form
         _host.Controls.Clear();
         _host.Controls.Add(view);
         _host.ResumeLayout();
-        _tabs.Visible = view == _home || view == _activity || view == _settingsView;
+        _bottomBar.Visible = view == _home || view == _activity || view == _settingsView;
         UpdateHome();
     }
 
@@ -193,28 +195,65 @@ sealed class MainForm : Form
 
     Control BuildHome()
     {
-        var col = Column();
-        var crest = new Crest { Size = new Size(118, 118), Anchor = AnchorStyles.None, Margin = new Padding(0, 0, 0, 16) };
-        var title = new SpacedLabel("Perpetua", Theme.Display(24f, bold: true), Theme.Gold, .2f) { Anchor = AnchorStyles.None };
-        _who.Anchor = AnchorStyles.None;
+        // One centred column: each item in its own row, anchored to nothing, so the table centres it both ways.
+        var t = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, BackColor = Color.Transparent };
+        t.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        var crest = new Crest { Size = new Size(118, 118), Margin = new Padding(0, 0, 0, 16) };
+        var title = new SpacedLabel("Perpetua", Theme.Display(24f, bold: true), Theme.Gold, .2f);
         _who.Margin = new Padding(0, 4, 0, 30);
         _sync.Font = Theme.Display(12f);
         _sync.Padding = new Padding(40, 16, 40, 16);
-        _sync.Anchor = AnchorStyles.None;
         _sync.Click += (_, _) => { _forceNext = true; _ = Tick(); };
-        _status.Anchor = AnchorStyles.None;
         _status.TextAlign = ContentAlignment.MiddleCenter;
         _status.Margin = new Padding(0, 14, 0, 0);
-        col.Controls.AddRange([crest, title, _who, _sync, _status]);
+        var items = new List<Control> { crest, title, _who, _sync, _status };
         if (_dev)
         {
             var dev = Words(Theme.GoldWarm, 11f, italic: true);
             dev.Text = "Test copy: syncs with dev.perpetua.gg";
-            dev.Anchor = AnchorStyles.None;
             dev.Margin = new Padding(0, 10, 0, 0);
-            col.Controls.Add(dev);
+            items.Add(dev);
         }
-        return Centered(col, center: true);
+        t.RowCount = items.Count + 2;
+        t.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
+        t.Controls.Add(new Panel { Size = Size.Empty, BackColor = Color.Transparent }, 0, 0);
+        for (var i = 0; i < items.Count; i++)
+        {
+            items[i].Anchor = AnchorStyles.None;
+            t.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            t.Controls.Add(items[i], 0, i + 1);
+        }
+        t.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
+        t.Controls.Add(new Panel { Size = Size.Empty, BackColor = Color.Transparent }, 0, items.Count + 1);
+        // Long status lines wrap within the window instead of running off it.
+        t.Resize += (_, _) => { foreach (var c in items) if (c is Label l) l.MaximumSize = new Size(Math.Max(100, t.ClientSize.Width - 20), 0); };
+        return t;
+    }
+
+    /// <summary>Tabs on the left; the site and the guild's Discord in the corner.</summary>
+    Control BuildBottomBar()
+    {
+        var bar = (Panel)_bottomBar;
+        bar.Dock = DockStyle.Fill;
+        bar.BackColor = Color.Transparent;
+        bar.Margin = Padding.Empty;
+        var t = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 1, BackColor = Color.Transparent, AutoSize = true };
+        t.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        t.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        t.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        var links = Row();
+        links.Anchor = AnchorStyles.Right;
+        var site = new WordLink(_site.Site.Host) { Margin = new Padding(0, 6, 14, 0) };
+        site.Click += (_, _) => OpenUrl(_site.Site.ToString());
+        var discord = new IconLink("discord-gold.png", "discord-pale.png", "Perpetua on Discord") { Size = new Size(24, 24), Margin = new Padding(0, 8, 2, 0) };
+        discord.Click += (_, _) => OpenUrl(DiscordInvite);
+        links.Controls.AddRange([site, discord]);
+        _tabs.Margin = new Padding(0, 6, 0, 0);
+        t.Controls.Add(_tabs, 0, 0);
+        t.Controls.Add(links, 2, 0);
+        bar.Height = Math.Max(_tabs.Height, 34) + 6;
+        bar.Controls.Add(t);
+        return bar;
     }
 
     Control BuildActivity()
@@ -356,8 +395,6 @@ sealed class MainForm : Form
         _who.Text = _site.Key == null ? "Not connected" : _connectedAs != null ? $"Connected as {_connectedAs}" : "Connected";
         _sync.Enabled = _site.Key != null && _flavors.Count > 0 && !_busy;
         _sync.Text = _busy ? "Syncing…" : "Sync now";
-        _home.PerformLayout();
-        _home.Width++; _home.Width--; // re-centre after text changes
     }
 
     void SetStatus(string text, Color color)
@@ -506,11 +543,10 @@ sealed class MainForm : Form
         catch (System.Runtime.InteropServices.ExternalException) { Log("Couldn't copy (another app is using the clipboard). Type the code instead."); }
     }
 
-    void OpenAdminPage()
-    {
-        // A fixed address on the guild site, opened in the default browser.
-        Process.Start(new ProcessStartInfo(AdminUrl) { UseShellExecute = true });
-    }
+    void OpenAdminPage() => OpenUrl(AdminUrl);
+
+    // Only ever fixed addresses (the guild site and its Discord invite), opened in the default browser.
+    static void OpenUrl(string url) => Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
 
     // ---------- syncing ----------
 
