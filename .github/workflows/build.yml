@@ -1,0 +1,87 @@
+# Tests and builds Perpetua Sync on every push. A version tag (v1.2.3) also publishes a GitHub Release with the exe,
+# its SHA-256, and a signed build-provenance attestation, so anyone can check a download was built here from this
+# source: gh attestation verify PerpetuaSync.exe --repo Damndionic/perpetua-sync
+# Actions are pinned to full commit SHAs (Dependabot proposes updates). No secrets are used.
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+  DOTNET_NOLOGO: "1"
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: "10.0.x"
+      - name: Test
+        run: dotnet run --project tests/PerpetuaSync.Tests -c Release
+      - name: Build
+        run: dotnet publish src/PerpetuaSync -c Release -o out
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: PerpetuaSync-${{ github.sha }}
+          path: out/PerpetuaSync.exe
+          retention-days: 14
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: windows-latest
+    permissions:
+      contents: write      # the GitHub Release
+      id-token: write      # signing the attestation
+      attestations: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: "10.0.x"
+      - name: Tag matches the app's version
+        shell: pwsh
+        run: |
+          $v = ([xml](Get-Content src/PerpetuaSync/PerpetuaSync.csproj)).Project.PropertyGroup.Version | Where-Object { $_ } | Select-Object -First 1
+          if ("v$v" -ne "${{ github.ref_name }}") { throw "Tag ${{ github.ref_name }} but the project says $v" }
+      - name: Test
+        run: dotnet run --project tests/PerpetuaSync.Tests -c Release
+      - name: Build
+        run: dotnet publish src/PerpetuaSync -c Release -o out
+      - name: Checksum
+        shell: pwsh
+        run: |
+          $h = (Get-FileHash out/PerpetuaSync.exe -Algorithm SHA256).Hash.ToLower()
+          "$h  PerpetuaSync.exe" | Out-File -Encoding ascii out/SHA256SUMS.txt
+          "SHA-256: $h" >> $env:GITHUB_STEP_SUMMARY
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: out/PerpetuaSync.exe
+      - name: Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $h = (Get-Content out/SHA256SUMS.txt).Split(' ')[0]
+          $notes = @"
+          Perpetua Sync ${{ github.ref_name }} for Windows 10 and 11. Download PerpetuaSync.exe and run it; nothing to install.
+
+          SHA-256: ``$h``
+
+          Check it was built from this repository: ``gh attestation verify PerpetuaSync.exe --repo ${{ github.repository }}``
+          or in PowerShell: ``Get-FileHash PerpetuaSync.exe`` and compare with the SHA-256 above.
+          "@
+          gh release create "${{ github.ref_name }}" out/PerpetuaSync.exe out/SHA256SUMS.txt --title "Perpetua Sync ${{ github.ref_name }}" --notes $notes
