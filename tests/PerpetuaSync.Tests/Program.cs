@@ -77,6 +77,7 @@ Console.WriteLine("Lua reader");
     Check((string?)db["5"] == "single", "single-quoted strings and number keys");
     Check(r.ContainsKey("Other") && r["Other"] == null, "nil assignments");
 }
+Check((string?)Lua("X = \"a\\\r\nb\"")["X"] == "a\nb" && (string?)Lua("X = \"a\\\rb\"")["X"] == "a\nb", "an escaped Windows line break (\\ CR LF) is one newline, as in Lua");
 Throws<FormatException>(() => Lua("PerpetuaDB = os.execute(\"calc\")"), "refuses a function call (it's data, never code)");
 Throws<FormatException>(() => Lua("PerpetuaDB = { [\"a\"] = 1 + 2 }"), "refuses expressions");
 Throws<FormatException>(() => Lua("PerpetuaDB = { \"unterminated }"), "refuses an unterminated string");

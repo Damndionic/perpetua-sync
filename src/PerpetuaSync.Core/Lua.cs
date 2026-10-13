@@ -142,6 +142,13 @@ public sealed class LuaReader
                 continue;
             }
             _i++;
+            if (n is (byte)'\r' or (byte)'\n')
+            {
+                // An escaped line break is one newline, whichever kind (\r\n, \n\r, \r, \n), as in Lua itself.
+                if (_i < _s.Length && _s[_i] is (byte)'\r' or (byte)'\n' && _s[_i] != n) _i++;
+                bytes.Add((byte)'\n');
+                continue;
+            }
             bytes.Add(n switch
             {
                 (byte)'n' => (byte)'\n', (byte)'t' => (byte)'\t', (byte)'r' => (byte)'\r', (byte)'a' => 7, (byte)'b' => 8,
