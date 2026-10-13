@@ -61,9 +61,10 @@ static class Theme
         Make(["Cormorant Garamond SemiBold", "Cormorant Garamond"], size, italic ? FontStyle.Italic : FontStyle.Regular);
 
     /// <summary>Text with letter spacing (Cinzel headings are spaced out on the site). Returns the width drawn.</summary>
-    public static float DrawSpaced(Graphics g, string text, Font font, Color color, float x, float y, float spacingEm)
+    public static float DrawSpaced(Graphics g, string text, Font font, Color color, float x, float y, float spacingEm, bool smooth = false)
     {
-        g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
+        // smooth: inside Supersample, plain anti-aliasing (grid fitting would snap to the 4x pixels, not the real ones).
+        g.TextRenderingHint = smooth ? TextRenderingHint.AntiAlias : TextRenderingHint.AntiAliasGridFit;
         var gap = font.SizeInPoints * g.DpiX / 72f * spacingEm;
         var start = x;
         using var brush = new SolidBrush(color);
@@ -91,6 +92,57 @@ static class Theme
             h = Math.Max(h, sz.Height);
         }
         return new SizeF(Math.Max(0, w - gap), h);
+    }
+
+    /// <summary>
+    /// Draws at 4x and shrinks by averaging each 4x4 block in our own code, so edges are smooth whatever the drawing
+    /// library does (Wine's GDI+ ignores anti-aliasing for shapes; Windows' is fine, and this looks the same on both).
+    /// </summary>
+    public static Bitmap Supersample(Size size, Action<Graphics> draw, int factor = 4)
+    {
+        int w = Math.Max(1, size.Width), h = Math.Max(1, size.Height);
+        using var big = new Bitmap(w * factor, h * factor, System.Drawing.Imaging.PixelFormat.Format32bppPArgb);
+        using (var g = Graphics.FromImage(big))
+        {
+            g.Clear(Color.Transparent);
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            g.TextRenderingHint = TextRenderingHint.AntiAlias;
+            g.ScaleTransform(factor, factor);
+            draw(g);
+        }
+        var small = new Bitmap(w, h, System.Drawing.Imaging.PixelFormat.Format32bppPArgb);
+        var rb = big.LockBits(new Rectangle(0, 0, big.Width, big.Height), System.Drawing.Imaging.ImageLockMode.ReadOnly, big.PixelFormat);
+        var wb = small.LockBits(new Rectangle(0, 0, w, h), System.Drawing.Imaging.ImageLockMode.WriteOnly, small.PixelFormat);
+        try
+        {
+            var src = new byte[rb.Stride * big.Height];
+            Marshal.Copy(rb.Scan0, src, 0, src.Length);
+            var dst = new byte[wb.Stride * h];
+            var n = factor * factor;
+            for (var y = 0; y < h; y++)
+                for (var x = 0; x < w; x++)
+                {
+                    int b = 0, gg = 0, r = 0, a = 0;
+                    for (var dy = 0; dy < factor; dy++)
+                    {
+                        var row = (y * factor + dy) * rb.Stride + x * factor * 4;
+                        for (var dx = 0; dx < factor; dx++)
+                        {
+                            var i = row + dx * 4;
+                            b += src[i]; gg += src[i + 1]; r += src[i + 2]; a += src[i + 3];
+                        }
+                    }
+                    var o = y * wb.Stride + x * 4;
+                    dst[o] = (byte)(b / n); dst[o + 1] = (byte)(gg / n); dst[o + 2] = (byte)(r / n); dst[o + 3] = (byte)(a / n);
+                }
+            Marshal.Copy(dst, 0, wb.Scan0, dst.Length);
+        }
+        finally
+        {
+            big.UnlockBits(rb);
+            small.UnlockBits(wb);
+        }
+        return small;
     }
 
     /// <summary>Dark title bar to match (Windows 10 20H1+), and a navy caption on Windows 11. Ignored elsewhere.</summary>
@@ -132,10 +184,18 @@ sealed class Crest : Control
 {
     public Crest() { SetStyle(ControlStyles.SupportsTransparentBackColor | ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint, true); BackColor = Color.Transparent; }
 
+    Bitmap? _art;
+
+    protected override void OnSizeChanged(EventArgs e) { _art?.Dispose(); _art = null; base.OnSizeChanged(e); }
+
     protected override void OnPaint(PaintEventArgs e)
     {
-        var g = e.Graphics;
-        g.SmoothingMode = SmoothingMode.AntiAlias;
+        _art ??= Theme.Supersample(Size, Draw);
+        e.Graphics.DrawImageUnscaled(_art, 0, 0);
+    }
+
+    void Draw(Graphics g)
+    {
         var s = Math.Min(Width, Height) / 120f;
         g.ScaleTransform(s, s);
         using var ring = new Pen(Theme.Gold, 3f);
@@ -185,7 +245,20 @@ sealed class SpacedLabel : Control
         Size = new Size((int)Math.Ceiling(sz.Width) + 4, (int)Math.Ceiling(sz.Height) + 2);
     }
 
-    protected override void OnPaint(PaintEventArgs e) => Theme.DrawSpaced(e.Graphics, Text.ToUpperInvariant(), Font, ForeColor, 0, 1, Spacing);
+    Bitmap? _art;
+    string? _artKey;
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        var key = $"{Text}|{ForeColor.ToArgb()}|{Size}|{Font.Size}|{Spacing}";
+        if (_art == null || _artKey != key)
+        {
+            _art?.Dispose();
+            _art = Theme.Supersample(Size, g => Theme.DrawSpaced(g, Text.ToUpperInvariant(), Font, ForeColor, 0, 1, Spacing, smooth: true));
+            _artKey = key;
+        }
+        e.Graphics.DrawImageUnscaled(_art, 0, 0);
+    }
 }
 
 /// <summary>The site's .btn / .cta: gold outline, solid gold for the main action, coral for danger. A real Button
