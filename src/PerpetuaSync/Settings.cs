@@ -14,6 +14,8 @@ sealed class Settings
 {
     public string? WowFolder { get; set; }
     public string? ProtectedKey { get; set; }
+    /// <summary>What the window's X does: true = hide to the tray and keep syncing, false = exit, null = ask (first time).</summary>
+    public bool? CloseToTray { get; set; }
 
     static readonly JsonSerializerOptions Json = new() { WriteIndented = true };
 

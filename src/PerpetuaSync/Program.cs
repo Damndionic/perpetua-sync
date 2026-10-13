@@ -10,11 +10,14 @@ static class Program
     static int Main(string[] args)
     {
         var dev = args.Contains("--dev");
-        // One window at a time per Windows user (two would upload the same things twice).
-        using var single = new Mutex(true, dev ? @"Local\PerpetuaSync-dev" : @"Local\PerpetuaSync", out var first);
+        // One copy per Windows user (two would upload the same things twice). Opening it again brings the running one
+        // to the front (it may be hidden in the tray).
+        var name = dev ? @"Local\PerpetuaSync-dev" : @"Local\PerpetuaSync";
+        using var single = new Mutex(true, name, out var first);
+        using var showMe = new EventWaitHandle(false, EventResetMode.AutoReset, name + "-show");
         if (!first)
         {
-            MessageBox.Show("Perpetua Sync is already open.", "Perpetua Sync", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            showMe.Set();
             return 0;
         }
         // Anything unexpected is written to error.log and shown, and the window stays open.
@@ -24,7 +27,7 @@ static class Program
         TaskScheduler.UnobservedTaskException += (_, e) => { Report(e.Exception); e.SetObserved(); };
         ApplicationConfiguration.Initialize();
         Theme.Load();
-        Application.Run(new MainForm(dev ? SiteClient.Dev : SiteClient.Live, dev));
+        Application.Run(new MainForm(dev ? SiteClient.Dev : SiteClient.Live, dev, showMe));
         return 0;
     }
 

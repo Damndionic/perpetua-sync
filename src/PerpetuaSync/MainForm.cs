@@ -7,9 +7,10 @@ namespace PerpetuaSync;
 
 /// <summary>
 /// The whole app. The first time, two steps: find World of Warcraft, connect to the site. After that one screen:
-/// the crest and a Sync button, with Activity (the log) and Settings (folder, disconnect) as tabs. While the window
-/// is open it also syncs by itself whenever WoW saves (logout, /reload, exit). Closing the window stops it; nothing
-/// runs in the background or at startup.
+/// the crest and a Sync button, with Activity (the log) and Settings (folder, disconnect) as tabs. While it runs it
+/// also syncs by itself whenever WoW saves (logout, /reload, exit). The window's X hides it to the system tray, where
+/// it keeps syncing (asked once; Settings changes it); Exit, in the tray menu or Settings, stops it. It doesn't start
+/// with Windows.
 /// </summary>
 sealed class MainForm : Form
 {
@@ -72,7 +73,15 @@ sealed class MainForm : Form
 
     string AdminUrl => new Uri(_site.Site, "admin/sync").ToString();
 
-    public MainForm(Uri site, bool dev)
+    readonly NotifyIcon _tray = new() { Text = "Perpetua Sync" };
+    readonly CheckBox _trayBox = new()
+    {
+        Text = "Keep syncing in the system tray when I close the window", AutoSize = true, ForeColor = Theme.Text,
+        BackColor = Color.Transparent, UseCompatibleTextRendering = true, FlatStyle = FlatStyle.Flat, Margin = Padding.Empty,
+    };
+    bool _exiting, _toldAboutTray;
+
+    public MainForm(Uri site, bool dev, EventWaitHandle showMe)
     {
         _dev = dev;
         _settings = Settings.Load(dev);
@@ -109,7 +118,11 @@ sealed class MainForm : Form
         _tabs.Selected += i => Show(i switch { 1 => _activity, 2 => _settingsView, _ => _home });
         _timer.Tick += async (_, _) => await Tick();
         _countdown.Tick += (_, _) => ShowCountdown();
-        FormClosing += (_, _) => { _timer.Stop(); _pairing?.Cancel(); };
+        FormClosing += OnClosing;
+        FormClosed += (_, _) => { _tray.Visible = false; _tray.Dispose(); };
+        SetUpTray();
+        // Another launch asks this one to come forward.
+        ThreadPool.RegisterWaitForSingleObject(showMe, (_, _) => { if (!IsDisposed) BeginInvoke(ShowWindow); }, null, -1, false);
 
         _settings.WowFolder ??= WowFolder.Guess();
         SetFolder(_settings.WowFolder, save: false);
@@ -285,6 +298,19 @@ sealed class MainForm : Form
         site.Body.Controls.Add(inner, 0, 0);
         col.Controls.Add(site);
 
+        var background = new Section("While it runs") { Dock = DockStyle.None, Anchor = AnchorStyles.Left | AnchorStyles.Right };
+        _trayBox.Font = Theme.Serif(11.5f);
+        _trayBox.FlatAppearance.BorderColor = Theme.Gold;
+        _trayBox.FlatAppearance.CheckedBackColor = Theme.Midnight;
+        _trayBox.Checked = _settings.CloseToTray != false;
+        _trayBox.CheckedChanged += (_, _) => { _settings.CloseToTray = _trayBox.Checked; _settings.Save(_dev); };
+        var exit = new GoldButton("Exit Perpetua Sync") { Margin = new Padding(0, 12, 0, 0) };
+        exit.Click += (_, _) => ExitApp();
+        var bg = Column();
+        bg.Controls.AddRange([_trayBox, exit]);
+        background.Body.Controls.Add(bg, 0, 0);
+        col.Controls.Add(background);
+
         var about = Words(Theme.Muted, 10.5f, italic: true);
         about.Text = $"Version {_version}. Runs as you, never as administrator. Only connects to {_site.Site.Host}. "
                    + "Reads the addon's Perpetua.lua and writes only its SiteData.lua.";
@@ -327,6 +353,97 @@ sealed class MainForm : Form
         col.Resize += (_, _) => row.Width = col.ClientSize.Width;
         col.Dock = DockStyle.Top;
         return col;
+    }
+
+    // ---------- tray and closing ----------
+
+    void SetUpTray()
+    {
+        _tray.Icon = Icon;
+        var menu = new ContextMenuStrip { Renderer = new ToolStripProfessionalRenderer(new TrayColors()), ShowImageMargin = false };
+        menu.Font = Theme.Serif(11.5f);
+        var open = new ToolStripMenuItem("Open Perpetua Sync") { ForeColor = Theme.Text, Font = Theme.Serif(11.5f) };
+        open.Font = new Font(open.Font, FontStyle.Bold);
+        open.Click += (_, _) => ShowWindow();
+        var sync = new ToolStripMenuItem("Sync now") { ForeColor = Theme.Text };
+        sync.Click += (_, _) => { _forceNext = true; _ = Tick(); };
+        var exit = new ToolStripMenuItem("Exit") { ForeColor = Theme.Text };
+        exit.Click += (_, _) => ExitApp();
+        menu.Items.AddRange([open, sync, new ToolStripSeparator(), exit]);
+        menu.Opening += (_, _) => sync.Enabled = _site.Key != null && _flavors.Count > 0 && !_busy;
+        _tray.ContextMenuStrip = menu;
+        _tray.DoubleClick += (_, _) => ShowWindow();
+        _tray.BalloonTipClicked += (_, _) => ShowWindow();
+        _tray.Visible = true;
+    }
+
+    void ShowWindow()
+    {
+        Show();
+        if (WindowState == FormWindowState.Minimized) WindowState = FormWindowState.Normal;
+        Activate();
+        BringToFront();
+    }
+
+    void ExitApp()
+    {
+        _exiting = true;
+        Close();
+    }
+
+    void OnClosing(object? sender, FormClosingEventArgs e)
+    {
+        // Windows shutting down, Task Manager, or Exit: really close.
+        if (_exiting || e.CloseReason != CloseReason.UserClosing)
+        {
+            _timer.Stop();
+            _pairing?.Cancel();
+            return;
+        }
+        if (_settings.CloseToTray == null)
+        {
+            using var ask = new ClosePrompt(Icon);
+            var choice = ask.ShowDialog(this);
+            if (choice == DialogResult.Cancel) { e.Cancel = true; return; }
+            _settings.CloseToTray = choice == DialogResult.Yes;
+            _settings.Save(_dev);
+            _trayBox.Checked = _settings.CloseToTray.Value;
+        }
+        if (_settings.CloseToTray == false)
+        {
+            _exiting = true;
+            _timer.Stop();
+            _pairing?.Cancel();
+            return;
+        }
+        e.Cancel = true;
+        Hide();
+        if (!_toldAboutTray)
+        {
+            _toldAboutTray = true;
+            _tray.ShowBalloonTip(4000, "Perpetua Sync is still syncing", "It's in the system tray. Right-click the icon to sync or exit.", ToolTipIcon.None);
+        }
+    }
+
+    /// <summary>A tray notice, only while the window is hidden (in the window the Activity tab says it).</summary>
+    void Notify(string title, string text)
+    {
+        if (!Visible) _tray.ShowBalloonTip(5000, title, text, ToolTipIcon.Warning);
+    }
+
+    sealed class TrayColors : ProfessionalColorTable
+    {
+        public override Color ToolStripDropDownBackground => Theme.Midnight;
+        public override Color MenuBorder => Theme.Line;
+        public override Color MenuItemBorder => Theme.Line;
+        public override Color MenuItemSelected => Theme.Royal;
+        public override Color MenuItemSelectedGradientBegin => Theme.Royal;
+        public override Color MenuItemSelectedGradientEnd => Theme.Royal;
+        public override Color SeparatorDark => Theme.Line;
+        public override Color SeparatorLight => Theme.Midnight;
+        public override Color ImageMarginGradientBegin => Theme.Midnight;
+        public override Color ImageMarginGradientMiddle => Theme.Midnight;
+        public override Color ImageMarginGradientEnd => Theme.Midnight;
     }
 
     // ---------- small layout helpers ----------
@@ -589,16 +706,19 @@ sealed class MainForm : Form
             _lastDownload = DateTime.UtcNow;
             _retryAt = DateTime.MinValue;
             SetStatus($"Last synced at {DateTime.Now:h:mm tt}. Syncs by itself whenever WoW saves.", Theme.Muted);
+            _tray.Text = $"Perpetua Sync: last synced {DateTime.Now:h:mm tt}";
             if (force) Log("Synced.");
         }
         catch (SiteException e) when (e.Status == HttpStatusCode.Unauthorized)
         {
             Forget("The site no longer accepts this PC's key (it was revoked). Connect again.");
+            Notify("Perpetua Sync is disconnected", "The site no longer accepts this PC. Open the app to connect again.");
         }
         catch (SiteException e) when (e.Status == HttpStatusCode.Forbidden && e.Code == "not_officer")
         {
             Log("The site says your Discord account isn't an officer any more, so syncing is paused. It tries again in 30 seconds.");
             SetStatus("Paused: your Discord account isn't an officer.", Theme.Danger);
+            _tray.Text = "Perpetua Sync: paused (not an officer)";
             _retryAt = DateTime.UtcNow + RetryAfterError;
         }
         catch (Exception e) when (e is SiteException or HttpRequestException or TaskCanceledException or IOException or InvalidDataException or UnauthorizedAccessException)
