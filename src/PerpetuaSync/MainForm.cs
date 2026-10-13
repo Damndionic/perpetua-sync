@@ -165,9 +165,12 @@ sealed class MainForm : Form
         _code.Margin = new Padding(0, 18, 0, 10);
         _codeBox.Controls.Add(_code);
         var buttons = Row();
+        // Side by side, the same size: copy, then open the site and paste.
         _copy.Margin = new Padding(0, 0, 10, 0);
+        _open.Margin = Padding.Empty;
         _copy.Click += (_, _) => CopyCode();
         _open.Click += (_, _) => OpenAdminPage();
+        PairUp(_copy, _open);
         buttons.Controls.AddRange([_copy, _open]);
         _codeBox.Controls.Add(buttons);
         _waiting.Margin = new Padding(0, 14, 0, 6);
@@ -482,14 +485,22 @@ sealed class MainForm : Form
         _waiting.Text = $"Waiting for approval…  the code works for {left:m\\:ss} more.";
     }
 
+    /// <summary>Makes two buttons the width of the wider one (Fit() sizes each to its own text).</summary>
+    static void PairUp(GoldButton a, GoldButton b)
+    {
+        var w = Math.Max(a.Width, b.Width);
+        a.Width = b.Width = w;
+    }
+
     void CopyCode()
     {
         try
         {
             Clipboard.SetText(_code.Text);
             _copy.Text = "Copied";
+            PairUp(_copy, _open);
             var t = new System.Windows.Forms.Timer { Interval = 2000 };
-            t.Tick += (_, _) => { _copy.Text = "Copy code"; t.Dispose(); };
+            t.Tick += (_, _) => { _copy.Text = "Copy code"; PairUp(_copy, _open); t.Dispose(); };
             t.Start();
         }
         catch (System.Runtime.InteropServices.ExternalException) { Log("Couldn't copy (another app is using the clipboard). Type the code instead."); }
