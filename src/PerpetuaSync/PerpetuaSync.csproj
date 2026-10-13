@@ -1,0 +1,45 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- The Windows window. Builds on Linux too (EnableWindowsTargeting). No NuGet packages: only .NET itself.
+       Release:  dotnet publish src/PerpetuaSync -c Release   ->  one PerpetuaSync.exe, .NET included, nothing to install. -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <ApplicationIcon>Assets\perpetua.ico</ApplicationIcon>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <AssemblyName>PerpetuaSync</AssemblyName>
+    <RootNamespace>PerpetuaSync</RootNamespace>
+
+    <Version>1.0.0</Version>
+    <Product>Perpetua Sync</Product>
+    <Company>Perpetua</Company>
+    <Description>Syncs the Perpetua addon with perpetua.gg</Description>
+    <Copyright>Perpetua guild</Copyright>
+
+    <!-- Same source, same exe: anyone can rebuild it and compare. -->
+    <Deterministic>true</Deterministic>
+    <ContinuousIntegrationBuild Condition="'$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
+    <DebugType>embedded</DebugType>
+
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <!-- No usage data to Microsoft from the app (the SDK's own opt-out is DOTNET_CLI_TELEMETRY_OPTOUT). -->
+    <EventSourceSupport>false</EventSourceSupport>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../PerpetuaSync.Core/PerpetuaSync.Core.csproj" />
+    <EmbeddedResource Include="Assets\perpetua.ico" LogicalName="perpetua.ico" />
+    <!-- The site's fonts, from the addon (Media/Fonts), with their licenses (SIL OFL 1.1). -->
+    <EmbeddedResource Include="Assets\Fonts\*.ttf" />
+    <EmbeddedResource Include="Assets\Fonts\OFL-*.txt" />
+  </ItemGroup>
+</Project>
