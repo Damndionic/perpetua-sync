@@ -27,7 +27,9 @@ sealed class MainForm : Form
     readonly Syncer _syncer;
     readonly string _version = typeof(MainForm).Assembly.GetName().Version?.ToString(3) ?? "?";
 
-    List<Flavor> _flavors = [];
+    List<Flavor> _found = [];   // every game in the WoW folder
+    Flavor? _pick;              // the one picked on the setup screen (saved on Next)
+    List<Flavor> _flavors = []; // what syncs: the saved WoW Forever game, if it has the addon
     Dictionary<string, DateTime> _seen = [];
     DateTime _lastUpload = DateTime.MinValue, _lastDownload = DateTime.MinValue, _retryAt = DateTime.MinValue;
     bool _busy, _forceNext;
@@ -45,6 +47,7 @@ sealed class MainForm : Form
     readonly Field _folderStep = new(), _folderSettings = new();
     readonly Label _folderInfoStep = Words(Theme.Muted, 11f), _folderInfoSettings = Words(Theme.Muted, 11f);
     readonly GoldButton _next = new("Next", GoldButton.Kinds.Solid);
+    readonly FlowLayoutPanel _pickerStep = Column(), _pickerSettings = Column();
 
     // Step 2.
     readonly Label _connectText = Words(Theme.Text, 12.5f);
@@ -139,7 +142,7 @@ sealed class MainForm : Form
         };
         ShowStart();
         // Started with Windows: straight to the tray, unless setup isn't finished (then the window is what's needed).
-        _startHidden = startHidden && _site.Key != null && _flavors.Any(f => f.HasAddon);
+        _startHidden = startHidden && _site.Key != null && _flavors.Count > 0;
         if (_startHidden) _toldAboutTray = true;
         _timer.Start();
     }
@@ -149,7 +152,7 @@ sealed class MainForm : Form
     /// <summary>Where to begin: the first step that isn't done yet, else Home.</summary>
     void ShowStart()
     {
-        if (!_flavors.Any(f => f.HasAddon)) Show(_stepFolder);
+        if (_flavors.Count == 0) Show(_stepFolder);
         else if (_site.Key == null) Show(_stepConnect);
         else { Show(_home); _tabs.Select(0); }
     }
@@ -179,14 +182,21 @@ sealed class MainForm : Form
 
     Control BuildStepFolder()
     {
-        var col = Screen("Step 1 of 2", "Find World of Warcraft");
+        var col = Screen("Step 1 of 2", "Find WoW Forever");
         var text = Words(Theme.Text, 12.5f);
-        text.Text = "Pick the \"World of Warcraft\" folder that Battle.net installed WoW Forever into, usually "
-                  + "C:\\Program Files (x86)\\World of Warcraft. The Perpetua addon needs to be installed in the game.";
+        text.Text = "Pick the \"World of Warcraft\" folder Battle.net installed the game into (usually "
+                  + "C:\\Program Files (x86)\\World of Warcraft), then choose which game in it is WoW Forever.";
         col.Controls.Add(text);
         col.Controls.Add(FolderRow(_folderStep, _folderInfoStep));
-        _next.Margin = new Padding(0, 22, 0, 0);
-        _next.Click += (_, _) => ShowStart();
+        _pickerStep.Margin = new Padding(0, 10, 0, 0);
+        col.Controls.Add(_pickerStep);
+        _next.Margin = new Padding(0, 18, 0, 0);
+        _next.Click += (_, _) =>
+        {
+            if (_pick is not { HasAddon: true }) return;
+            SaveGame(_pick);
+            ShowStart();
+        };
         col.Controls.Add(_next);
         return Centered(col);
     }
@@ -308,7 +318,7 @@ sealed class MainForm : Form
     Control BuildSettings()
     {
         // The folder across the top; the site and background settings side by side; the version note under them.
-        var grid = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 4, BackColor = Color.Transparent, Padding = new Padding(0, 0, 0, 6) };
+        var grid = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 4, BackColor = Color.Transparent, Padding = new Padding(0, 0, 0, 6), AutoScroll = true };
         grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
         grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
         grid.RowStyles.Add(new RowStyle(SizeType.AutoSize));
@@ -317,7 +327,11 @@ sealed class MainForm : Form
         grid.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
         var wow = new Section("World of Warcraft") { Margin = new Padding(0, 0, 0, 14) };
-        wow.Body.Controls.Add(FolderRow(_folderSettings, _folderInfoSettings), 0, 0);
+        var wowCol = Column();
+        wowCol.Controls.Add(FolderRow(_folderSettings, _folderInfoSettings));
+        _pickerSettings.Margin = new Padding(0, 8, 0, 0);
+        wowCol.Controls.Add(_pickerSettings);
+        wow.Body.Controls.Add(wowCol, 0, 0);
         grid.Controls.Add(wow, 0, 0);
         grid.SetColumnSpan(wow, 2);
 
@@ -606,20 +620,81 @@ sealed class MainForm : Form
 
     void SetFolder(string? path, bool save)
     {
-        _flavors = WowFolder.Flavors(path);
-        var ok = _flavors.Any(f => f.HasAddon);
-        var info = string.IsNullOrEmpty(path) ? "Not found yet: press Choose." : WowFolder.Describe(_flavors);
-        foreach (var f in new[] { _folderStep, _folderSettings }) f.Box.Text = path ?? "";
-        foreach (var l in new[] { _folderInfoStep, _folderInfoSettings }) { l.Text = info; l.ForeColor = ok ? Theme.Muted : Theme.GoldWarm; }
-        _next.Enabled = ok;
-        _seen = [];
+        _found = WowFolder.Flavors(path);
         if (save)
         {
             _settings.WowFolder = path;
             _settings.Save(_dev);
-            if (_flavors.Count > 0) _forceNext = true;
         }
+        // The saved game if it's in this folder; otherwise a suggestion (only saved when the person presses Next).
+        _pick = _found.FirstOrDefault(f => f.Name == _settings.Game) ?? WowFolder.Suggest(_found);
+        string info;
+        if (string.IsNullOrEmpty(path)) info = "Not found yet: press Choose.";
+        else if (_found.Count == 0) info = "No WoW games in this folder. Pick the \"World of Warcraft\" folder itself.";
+        else info = "Which one is WoW Forever?";
+        foreach (var f in new[] { _folderStep, _folderSettings }) f.Box.Text = path ?? "";
+        foreach (var l in new[] { _folderInfoStep, _folderInfoSettings })
+        {
+            l.Text = info;
+            l.ForeColor = _found.Count > 0 ? Theme.GoldPale : Theme.GoldWarm;
+        }
+        ApplyGame();
+        if (save && _flavors.Count > 0) _forceNext = true;
+    }
+
+    void SaveGame(Flavor f)
+    {
+        _settings.Game = f.Name;
+        _settings.Save(_dev);
+        _pick = f;
+        ApplyGame();
+        _forceNext = true;
+        Log($"Syncing {WowFolder.Friendly(f.Name)} ({f.Name}) as WoW Forever.");
+    }
+
+    /// <summary>What syncs follows the saved game; both pickers show the choices.</summary>
+    void ApplyGame()
+    {
+        var saved = _found.FirstOrDefault(f => f.Name == _settings.Game);
+        _flavors = saved is { HasAddon: true } ? [saved] : [];
+        _seen = [];
+        FillPicker(_pickerStep, inSettings: false);
+        FillPicker(_pickerSettings, inSettings: true);
+        _next.Enabled = _pick is { HasAddon: true };
         UpdateHome();
+    }
+
+    // One round button per game in the folder. Games without the Perpetua addon are shown but can't be picked.
+    void FillPicker(FlowLayoutPanel host, bool inSettings)
+    {
+        host.SuspendLayout();
+        foreach (Control c in host.Controls) c.Dispose();
+        host.Controls.Clear();
+        var selected = inSettings ? _found.FirstOrDefault(f => f.Name == _settings.Game) : _pick;
+        foreach (var f in _found)
+        {
+            var option = new GoldCheck($"{WowFolder.Friendly(f.Name)}  ·  {WowFolder.Detail(f)}")
+            {
+                Radio = true, Enabled = f.HasAddon, Margin = new Padding(0, 6, 0, 0), Tag = f,
+            };
+            option.Checked = f == selected;
+            option.CheckedChanged += (_, _) =>
+            {
+                if (!option.Checked) return;
+                foreach (Control other in host.Controls) if (other != option && other is GoldCheck g) g.Checked = false;
+                if (inSettings) BeginInvoke(() => SaveGame(f)); // after this click: SaveGame rebuilds the list
+                else { _pick = f; _next.Enabled = f.HasAddon; }
+            };
+            host.Controls.Add(option);
+        }
+        if (inSettings && _found.Count > 0 && _flavors.Count == 0)
+        {
+            var warn = Words(Theme.GoldWarm, 11.5f, italic: true);
+            warn.Text = "Pick which game is WoW Forever: nothing syncs until you do.";
+            warn.Margin = new Padding(0, 6, 0, 0);
+            host.Controls.Add(warn);
+        }
+        host.ResumeLayout(true);
     }
 
     List<string> SavedFiles() => _flavors.SelectMany(f => f.SavedVariables()).ToList();

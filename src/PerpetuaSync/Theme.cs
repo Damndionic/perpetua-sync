@@ -607,6 +607,10 @@ sealed class GoldCheck : Control
         set { if (_checked == value) return; _checked = value; Invalidate(); CheckedChanged?.Invoke(this, EventArgs.Empty); }
     }
 
+    /// <summary>Round, and clicking only ever selects (the owner unselects the others in its group).</summary>
+    [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+    public bool Radio { get; set; }
+
     public GoldCheck(string text)
     {
         SetStyle(ControlStyles.SupportsTransparentBackColor | ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.ResizeRedraw | ControlStyles.Selectable, true);
@@ -639,9 +643,10 @@ sealed class GoldCheck : Control
     protected override void OnMouseLeave(EventArgs e) { _over = false; Invalidate(); base.OnMouseLeave(e); }
     protected override void OnGotFocus(EventArgs e) { Invalidate(); base.OnGotFocus(e); }
     protected override void OnLostFocus(EventArgs e) { Invalidate(); base.OnLostFocus(e); }
-    protected override void OnMouseClick(MouseEventArgs e) { Focus(); Checked = !Checked; base.OnMouseClick(e); }
+    protected override void OnMouseClick(MouseEventArgs e) { if (!Enabled) return; Focus(); Checked = Radio || !Checked; base.OnMouseClick(e); }
     protected override bool IsInputKey(Keys k) => k == Keys.Space || base.IsInputKey(k);
-    protected override void OnKeyDown(KeyEventArgs e) { if (e.KeyCode == Keys.Space) Checked = !Checked; base.OnKeyDown(e); }
+    protected override void OnKeyDown(KeyEventArgs e) { if (e.KeyCode == Keys.Space && Enabled) Checked = Radio || !Checked; base.OnKeyDown(e); }
+    protected override void OnEnabledChanged(EventArgs e) { Cursor = Enabled ? Cursors.Hand : Cursors.Default; Invalidate(); base.OnEnabledChanged(e); }
 
     protected override void OnPaint(PaintEventArgs e)
     {
@@ -650,14 +655,24 @@ sealed class GoldCheck : Control
         var b = Box;
         var top = (Height - b) / 2;
         var box = new Rectangle(1, top, b, b);
-        using (var fill = new SolidBrush(Theme.Midnight)) g.FillRectangle(fill, box);
-        using (var edge = new Pen(_over || Focused ? Theme.GoldPale : Theme.Gold)) g.DrawRectangle(edge, box);
-        if (_checked)
+        var edgeColor = !Enabled ? Theme.Line : _over || Focused ? Theme.GoldPale : Theme.Gold;
+        if (Radio)
+        {
+            using (var fill = new SolidBrush(Theme.Midnight)) g.FillEllipse(fill, box);
+            using (var edge = new Pen(edgeColor)) g.DrawEllipse(edge, box);
+            if (_checked) using (var dot = new SolidBrush(Theme.Gold)) g.FillEllipse(dot, box.Left + b * .27f, top + b * .27f, b * .46f, b * .46f);
+        }
+        else
+        {
+            using (var fill = new SolidBrush(Theme.Midnight)) g.FillRectangle(fill, box);
+            using (var edge = new Pen(edgeColor)) g.DrawRectangle(edge, box);
+        }
+        if (_checked && !Radio)
         {
             using var tick = new Pen(Theme.Gold, Math.Max(2f, b / 7f)) { StartCap = System.Drawing.Drawing2D.LineCap.Round, EndCap = System.Drawing.Drawing2D.LineCap.Round, LineJoin = System.Drawing.Drawing2D.LineJoin.Round };
             g.DrawLines(tick, [new PointF(box.Left + b * .22f, top + b * .52f), new PointF(box.Left + b * .42f, top + b * .72f), new PointF(box.Left + b * .78f, top + b * .28f)]);
         }
-        using var ink = new SolidBrush(ForeColor);
+        using var ink = new SolidBrush(Enabled ? ForeColor : Theme.Muted);
         g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAliasGridFit;
         var sz = g.MeasureString(Text, Font, Math.Max(40, TextWidth));
         g.DrawString(Text, Font, ink, new RectangleF(b + 10, (Height - sz.Height) / 2f, sz.Width + 2, sz.Height + 2));

@@ -64,6 +64,23 @@ public static class WowFolder
         return s.Length == 0 ? flavor : char.ToUpperInvariant(s[0]) + s[1..];
     }
 
+    /// <summary>One game's line in the picker: "Perpetua addon found, 1 account with guild data".</summary>
+    public static string Detail(Flavor f)
+    {
+        if (!f.HasAddon) return "Perpetua addon not installed";
+        var saved = f.SavedVariables().Count();
+        return "Perpetua addon found" + (saved > 0 ? $", {saved} account{(saved == 1 ? "" : "s")} with guild data" : ", no guild data yet");
+    }
+
+    /// <summary>The game to suggest when nothing's chosen yet: one named Forever with the addon, else the only one with
+    /// the addon. Null when it's not clear: then the person picks.</summary>
+    public static Flavor? Suggest(List<Flavor> flavors)
+    {
+        var withAddon = flavors.Where(f => f.HasAddon).ToList();
+        return withAddon.FirstOrDefault(f => f.Name.Contains("forever", StringComparison.OrdinalIgnoreCase))
+               ?? (withAddon.Count == 1 ? withAddon[0] : null);
+    }
+
     /// <summary>A plain-English check of a picked folder, for the window.</summary>
     public static string Describe(List<Flavor> flavors)
     {

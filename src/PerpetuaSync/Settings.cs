@@ -13,6 +13,8 @@ namespace PerpetuaSync;
 sealed class Settings
 {
     public string? WowFolder { get; set; }
+    /// <summary>Which game in the WoW folder is WoW Forever: its folder name (e.g. "_classic_beta_"). Null: not chosen yet.</summary>
+    public string? Game { get; set; }
     public string? ProtectedKey { get; set; }
     /// <summary>What the window's X does: true = hide to the tray and keep syncing, false = exit, null = ask (first time).</summary>
     public bool? CloseToTray { get; set; }
