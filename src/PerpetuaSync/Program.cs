@@ -6,6 +6,7 @@ static class Program
 {
     // PerpetuaSync.exe           syncs with perpetua.gg
     // PerpetuaSync.exe --dev     syncs with dev.perpetua.gg (testing; its own settings and key)
+    // PerpetuaSync.exe --tray    starts in the tray, no window (how Start with Windows launches it)
     [STAThread]
     static int Main(string[] args)
     {
@@ -27,7 +28,7 @@ static class Program
         TaskScheduler.UnobservedTaskException += (_, e) => { Report(e.Exception); e.SetObserved(); };
         ApplicationConfiguration.Initialize();
         Theme.Load();
-        Application.Run(new MainForm(dev ? SiteClient.Dev : SiteClient.Live, dev, showMe));
+        Application.Run(new MainForm(dev ? SiteClient.Dev : SiteClient.Live, dev, showMe, startHidden: args.Contains("--tray")));
         return 0;
     }
 

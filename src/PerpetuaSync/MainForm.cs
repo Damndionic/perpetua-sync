@@ -9,8 +9,8 @@ namespace PerpetuaSync;
 /// The whole app. The first time, two steps: find World of Warcraft, connect to the site. After that one screen:
 /// the crest and a Sync button, with Activity (the log) and Settings (folder, disconnect) as tabs. While it runs it
 /// also syncs by itself whenever WoW saves (logout, /reload, exit). The window's X hides it to the system tray, where
-/// it keeps syncing (asked once; Settings changes it); Exit, in the tray menu or Settings, stops it. It doesn't start
-/// with Windows.
+/// it keeps syncing (asked once; Settings changes it); Exit, in the tray menu or Settings, stops it. It starts with
+/// Windows, in the tray, unless that's turned off in Settings.
 /// </summary>
 sealed class MainForm : Form
 {
@@ -79,9 +79,14 @@ sealed class MainForm : Form
         Text = "Keep syncing in the system tray when I close the window", AutoSize = true, ForeColor = Theme.Text,
         BackColor = Color.Transparent, UseCompatibleTextRendering = true, FlatStyle = FlatStyle.Flat, Margin = Padding.Empty,
     };
-    bool _exiting, _toldAboutTray;
+    readonly CheckBox _startBox = new()
+    {
+        Text = "Start with Windows (in the tray)", AutoSize = true, ForeColor = Theme.Text,
+        BackColor = Color.Transparent, UseCompatibleTextRendering = true, FlatStyle = FlatStyle.Flat, Margin = new Padding(0, 8, 0, 0),
+    };
+    bool _exiting, _toldAboutTray, _startHidden;
 
-    public MainForm(Uri site, bool dev, EventWaitHandle showMe)
+    public MainForm(Uri site, bool dev, EventWaitHandle showMe, bool startHidden = false)
     {
         _dev = dev;
         _settings = Settings.Load(dev);
@@ -94,8 +99,10 @@ sealed class MainForm : Form
         Font = Theme.Serif(11.5f);
         BackColor = Theme.Navy;
         ForeColor = Theme.Text;
-        ClientSize = new Size(480, 560);
-        MinimumSize = new Size(440, 520);
+        // A small utility window, always the size it was designed at (Windows scales it with the display).
+        ClientSize = new Size(440, 540);
+        FormBorderStyle = FormBorderStyle.FixedSingle;
+        MaximizeBox = false;
         StartPosition = FormStartPosition.CenterScreen;
 
         _stepFolder = BuildStepFolder();
@@ -121,6 +128,7 @@ sealed class MainForm : Form
         FormClosing += OnClosing;
         FormClosed += (_, _) => { _tray.Visible = false; _tray.Dispose(); };
         SetUpTray();
+        Startup.Apply(_settings.StartWithWindows, _dev);
         // Another launch asks this one to come forward.
         ThreadPool.RegisterWaitForSingleObject(showMe, (_, _) => { if (!IsDisposed) BeginInvoke(ShowWindow); }, null, -1, false);
 
@@ -130,6 +138,9 @@ sealed class MainForm : Form
             Log("The saved connection can't be read on this Windows account. Connect again.");
         Log($"Perpetua Sync {_version} started.");
         ShowStart();
+        // Started with Windows: straight to the tray, unless setup isn't finished (then the window is what's needed).
+        _startHidden = startHidden && _site.Key != null && _flavors.Any(f => f.HasAddon);
+        if (_startHidden) _toldAboutTray = true;
         _timer.Start();
     }
 
@@ -306,8 +317,18 @@ sealed class MainForm : Form
         _trayBox.CheckedChanged += (_, _) => { _settings.CloseToTray = _trayBox.Checked; _settings.Save(_dev); };
         var exit = new GoldButton("Exit Perpetua Sync") { Margin = new Padding(0, 12, 0, 0) };
         exit.Click += (_, _) => ExitApp();
+        _startBox.Font = Theme.Serif(11.5f);
+        _startBox.FlatAppearance.BorderColor = Theme.Gold;
+        _startBox.FlatAppearance.CheckedBackColor = Theme.Midnight;
+        _startBox.Checked = _settings.StartWithWindows;
+        _startBox.CheckedChanged += (_, _) =>
+        {
+            _settings.StartWithWindows = _startBox.Checked;
+            _settings.Save(_dev);
+            Startup.Apply(_startBox.Checked, _dev);
+        };
         var bg = Column();
-        bg.Controls.AddRange([_trayBox, exit]);
+        bg.Controls.AddRange([_trayBox, _startBox, exit]);
         background.Body.Controls.Add(bg, 0, 0);
         col.Controls.Add(background);
 
@@ -316,6 +337,7 @@ sealed class MainForm : Form
                    + "Reads the addon's Perpetua.lua and writes only its SiteData.lua.";
         col.Controls.Add(about);
         var wrap = Centered(col);
+        ((ScrollableControl)wrap).AutoScroll = true; // the fixed window may be shorter than Settings
         // Sections fill the width here.
         wrap.Resize += (_, _) => { foreach (Control c in col.Controls) if (c is Section) c.Width = col.ClientSize.Width - 2; };
         return wrap;
@@ -375,6 +397,18 @@ sealed class MainForm : Form
         _tray.DoubleClick += (_, _) => ShowWindow();
         _tray.BalloonTipClicked += (_, _) => ShowWindow();
         _tray.Visible = true;
+    }
+
+    protected override void SetVisibleCore(bool value)
+    {
+        if (_startHidden)
+        {
+            // The first Show() from Application.Run: make the window (so the timer and tray work) but keep it hidden.
+            _startHidden = false;
+            if (!IsHandleCreated) CreateHandle();
+            value = false;
+        }
+        base.SetVisibleCore(value);
     }
 
     void ShowWindow()

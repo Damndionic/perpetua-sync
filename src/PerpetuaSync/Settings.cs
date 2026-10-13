@@ -17,6 +17,9 @@ sealed class Settings
     /// <summary>What the window's X does: true = hide to the tray and keep syncing, false = exit, null = ask (first time).</summary>
     public bool? CloseToTray { get; set; }
 
+    /// <summary>Start (in the tray) when this Windows user signs in. On unless turned off in Settings.</summary>
+    public bool StartWithWindows { get; set; } = true;
+
     static readonly JsonSerializerOptions Json = new() { WriteIndented = true };
 
     public static string Folder => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Perpetua Sync");
