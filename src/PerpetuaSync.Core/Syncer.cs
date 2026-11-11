@@ -105,8 +105,12 @@ public sealed class Syncer(SiteClient site, string stateFile, Action<string> log
         if ((string?)_state["_roster_fp"] == fp) return;
         if (DryRun) { log($"Would upload the guild roster: {members.Count} members"); return; }
         var res = await site.Post("/api/sync/roster", new JsonObject { ["at"] = at, ["members"] = members }, ct);
-        _state["_roster_fp"] = fp;
-        SaveState();
+        // "missing": the site couldn't keep it (its table isn't there yet), so send it again on the next pass.
+        if ((string?)res["roster"] != "missing")
+        {
+            _state["_roster_fp"] = fp;
+            SaveState();
+        }
         if (res["raised"] is JsonArray raised && raised.Count > 0)
             log("Levels from the guild roster: " + string.Join(", ", raised.Select(x => x?.ToString())));
     }
