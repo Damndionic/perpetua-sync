@@ -70,6 +70,9 @@ public sealed class Syncer(SiteClient site, string stateFile, Action<string> log
         catch (SiteException e) when (e.Status == HttpStatusCode.NotFound) { } // the site has raids switched off
         try { await UploadRoster(dbs, ct); }
         catch (SiteException e) when (e.Status == HttpStatusCode.NotFound) { }
+        try { await UploadHits(dbs, ct); }
+        // 404: a site from before /api/sync/hits; 503: its table isn't made yet
+        catch (SiteException e) when (e.Status is HttpStatusCode.NotFound or HttpStatusCode.ServiceUnavailable) { }
         await UploadProfiles(dbs, ct);
     }
 
@@ -113,6 +116,21 @@ public sealed class Syncer(SiteClient site, string stateFile, Action<string> log
         }
         if (res["raised"] is JsonArray raised && raised.Count > 0)
             log("Levels from the guild roster: " + string.Join(", ", raised.Select(x => x?.ToString())));
+    }
+
+    /// <summary>The hit book (addon 2.21: everyone's hit lists, passed along in game), when it changed.</summary>
+    async Task UploadHits(List<(string, JsonObject)> dbs, CancellationToken ct)
+    {
+        var entries = AddonData.HitbookEntries(AddonData.CollectHitbook(dbs));
+        if (entries.Count == 0) return;
+        var fp = AddonData.Fingerprint(entries);
+        if ((string?)_state["_hits_fp"] == fp) return;
+        if (DryRun) { log($"Would upload the hit book: {entries.Count} hit lists"); return; }
+        var res = await site.Post("/api/sync/hits", new JsonObject { ["entries"] = entries }, ct);
+        _state["_hits_fp"] = fp;
+        SaveState();
+        var saved = AddonData.Long(res["saved"]);
+        if (saved > 0) log($"Hit book: {saved} hit lists updated");
     }
 
     static readonly Dictionary<string, string> Labels = new()

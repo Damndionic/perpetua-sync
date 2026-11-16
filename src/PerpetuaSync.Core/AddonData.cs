@@ -203,6 +203,45 @@ public static partial class AddonData
         return best;
     }
 
+    /// <summary>Every guild's hit book merged across files as the addon merges it: a later flush stamp wins, or the
+    /// same stamp with more kills and deaths (sync/perpetua_sync.py collect_hitbook).</summary>
+    public static Dictionary<string, JsonObject> CollectHitbook(IEnumerable<(string Path, JsonObject Db)> dbs)
+    {
+        var book = new Dictionary<string, JsonObject>(StringComparer.Ordinal);
+        foreach (var (_, db) in dbs)
+            foreach (var (_, g) in Guilds(db))
+                foreach (var (name, node) in g["hitbook"] as JsonObject ?? [])
+                {
+                    if (node is not JsonObject e || e["h"] is not JsonObject h || e["hv"] is not JsonValue) continue;
+                    var hv = Long(e["hv"]);
+                    if (hv <= 0) continue;
+                    if (book.TryGetValue(name, out var old))
+                    {
+                        var oldHv = Long(old["hv"]);
+                        if (oldHv > hv || (oldHv == hv && HitTotal(new JsonObject { ["hits"] = old["h"]!.DeepClone() }) >= HitTotal(new JsonObject { ["hits"] = h.DeepClone() }))) continue;
+                    }
+                    book[name] = new JsonObject { ["hv"] = hv, ["h"] = h.DeepClone(), ["c"] = e["c"]?.DeepClone() };
+                }
+        return book;
+    }
+
+    /// <summary>The hit book in the shape /api/sync/hits takes, sorted by name; names without a surname are left out.</summary>
+    public static JsonArray HitbookEntries(Dictionary<string, JsonObject> book)
+    {
+        var entries = new JsonArray();
+        foreach (var (full, e) in book.OrderBy(p => p.Key, StringComparer.Ordinal))
+        {
+            var space = full.IndexOf(' ');
+            if (space < 0) continue;
+            entries.Add(new JsonObject
+            {
+                ["n"] = full[..space], ["s"] = full[(space + 1)..],
+                ["hv"] = e["hv"]!.DeepClone(), ["c"] = e["c"]?.DeepClone(), ["h"] = e["h"]!.DeepClone(),
+            });
+        }
+        return entries;
+    }
+
     /// <summary>The roster in the shape /api/sync/roster takes, sorted by name.</summary>
     public static JsonArray RosterMembers(JsonObject roster)
     {
