@@ -225,6 +225,32 @@ public static partial class AddonData
         return book;
     }
 
+    /// <summary>The newest Shit List in any file (addon 2.22 ShitList.lua: officers keep it in game, and the addon only
+    /// takes it from an officer), in the shape /api/sync/shitlist takes; null when there's none (sync/perpetua_sync.py
+    /// collect_shitlist).</summary>
+    public static JsonObject? CollectShitlist(IEnumerable<(string Path, JsonObject Db)> dbs)
+    {
+        JsonObject? best = null;
+        long bestT = 0;
+        foreach (var (_, db) in dbs)
+            foreach (var (_, g) in Guilds(db))
+            {
+                if (g["shitlist"] is not JsonObject sl) continue;
+                var t = Long(sl["t"]);
+                if (t <= 0 || t <= bestT) continue;
+                if (sl["list"] is not (JsonObject or JsonArray)) continue; // an empty Lua table may read as an array
+                var list = new JsonObject();
+                if (sl["list"] is JsonObject entries)
+                {
+                    foreach (var (k, e) in entries)
+                        if (e is JsonObject) list[k] = e.DeepClone();
+                }
+                best = new JsonObject { ["t"] = t, ["list"] = list };
+                bestT = t;
+            }
+        return best;
+    }
+
     /// <summary>The hit book in the shape /api/sync/hits takes, sorted by name; names without a surname are left out.</summary>
     public static JsonArray HitbookEntries(Dictionary<string, JsonObject> book)
     {

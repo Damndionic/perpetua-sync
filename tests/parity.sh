@@ -22,7 +22,7 @@ for full, r in sorted(roster.items()):
     members.append({"n": name, "s": surname or None, "l": r.get("l"), "c": r.get("c"), "t": r.get("s")})
 hits = [{"n": f.partition(" ")[0], "s": f.partition(" ")[2], "hv": e["hv"], "c": e["c"], "h": e["h"]}
         for f, e in sorted(ps.collect_hitbook(files).items()) if f.partition(" ")[2]]
-print(json.dumps({"profiles": profiles, "loot": loot, "rolls": rolls, "roster_at": at, "roster": members, "hits": hits}))
+print(json.dumps({"profiles": profiles, "loot": loot, "rolls": rolls, "roster_at": at, "roster": members, "hits": hits, "shitlist": ps.collect_shitlist(files)}))
 PYEOF
 python3 -I - "$OUT/cs.json" "$OUT/py.json" <<'PYEOF'
 import json, sys

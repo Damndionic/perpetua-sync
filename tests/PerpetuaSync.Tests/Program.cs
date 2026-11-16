@@ -23,6 +23,7 @@ if (args.Length >= 2 && args[0] == "--dump")
         ["roster_at"] = at,
         ["roster"] = AddonData.RosterMembers(roster),
         ["hits"] = AddonData.HitbookEntries(AddonData.CollectHitbook(dbs)),
+        ["shitlist"] = AddonData.CollectShitlist(dbs),
     };
     Console.WriteLine(dump.ToJsonString());
     return 0;

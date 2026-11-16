@@ -73,6 +73,8 @@ public sealed class Syncer(SiteClient site, string stateFile, Action<string> log
         try { await UploadHits(dbs, ct); }
         // 404: a site from before /api/sync/hits; 503: its table isn't made yet
         catch (SiteException e) when (e.Status is HttpStatusCode.NotFound or HttpStatusCode.ServiceUnavailable) { }
+        try { await UploadShitlist(dbs, ct); }
+        catch (SiteException e) when (e.Status == HttpStatusCode.NotFound) { } // a site from before /api/sync/shitlist
         await UploadProfiles(dbs, ct);
     }
 
@@ -131,6 +133,21 @@ public sealed class Syncer(SiteClient site, string stateFile, Action<string> log
         SaveState();
         var saved = AddonData.Long(res["saved"]);
         if (saved > 0) log($"Hit book: {saved} hit lists updated");
+    }
+
+    /// <summary>The Shit List (addon 2.22), when a newer one is saved.</summary>
+    async Task UploadShitlist(List<(string, JsonObject)> dbs, CancellationToken ct)
+    {
+        var sl = AddonData.CollectShitlist(dbs);
+        if (sl is null) return;
+        var t = AddonData.Long(sl["t"]);
+        if (AddonData.Long(_state["_shitlist_t"]) >= t) return;
+        var count = ((JsonObject)sl["list"]!).Count;
+        if (DryRun) { log($"Would upload the Shit List: {count} names"); return; }
+        await site.Post("/api/sync/shitlist", sl, ct);
+        _state["_shitlist_t"] = t;
+        SaveState();
+        log($"Shit List: {count} names");
     }
 
     static readonly Dictionary<string, string> Labels = new()
