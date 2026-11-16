@@ -11,6 +11,7 @@ namespace PerpetuaSync.Core;
 public sealed record Profile(string Name, JsonObject Data, string Guild, string File)
 {
     public long Time => AddonData.Long(Data["t"]);
+    public bool Own { get; init; } // the player's own character on this account (rec.self), not a guildmate's copy
 }
 
 /// <summary>
@@ -157,10 +158,23 @@ public static partial class AddonData
                 foreach (var (name, recNode) in g["players"] as JsonObject ?? [])
                 {
                     if (recNode is not JsonObject rec || Merge(rec) is not { } data) continue;
-                    var p = new Profile(name, data, guild, path);
-                    if (!found.TryGetValue(name, out var had) || p.Time > had.Time) found[name] = p;
+                    var p = new Profile(name, data, guild, path) { Own = Truthy(rec["self"]) };
+                    if (!found.TryGetValue(name, out var had) || Rank(p).CompareTo(Rank(had)) > 0) found[name] = p;
                 }
         return found;
+    }
+
+    /// <summary>Which copy of a character wins: the newest; on the same time stamp the player's own (live) copy, then
+    /// the one with more hits (addon 2.20 and before could hold one profile version with different hit counts).</summary>
+    static (long, int, long) Rank(Profile p) => (p.Time, p.Own ? 1 : 0, HitTotal(p.Data));
+
+    static long HitTotal(JsonObject data)
+    {
+        long n = 0;
+        if (data["hits"] is not JsonObject h) return 0;
+        foreach (var key in new[] { "w", "du" })
+            if (h[key] is JsonObject m) n += Long(m["nk"]) + Long(m["nd"]);
+        return n;
     }
 
     /// <summary>Loot and rolls from every guild (duplicates are fine: the site drops them).</summary>
